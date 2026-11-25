@@ -176,3 +176,19 @@ fn a_slashdashed_node_still_owns_at_most_one_real_block() {
         Error::MultipleChildren(18)
     );
 }
+
+#[test]
+fn consecutive_slashdashed_nodes_each_own_their_block() {
+    let only = |name: &'static str, start: usize| {
+        vec![Event::Node {
+            ty: None,
+            name: Cow::Borrowed(name),
+            start,
+        }]
+    };
+    assert_eq!(events("/-n {a}\n/-m {b}\nk").unwrap(), only("k", 16));
+    assert_eq!(events("/-n {}; /-n {}; /-n {}").unwrap(), vec![]);
+    let mut nested = only("p", 0);
+    nested.extend([Event::Begin { offset: 2 }, Event::End { offset: 21 }]);
+    assert_eq!(events("p { /-n {a}; /-m {b} }").unwrap(), nested);
+}

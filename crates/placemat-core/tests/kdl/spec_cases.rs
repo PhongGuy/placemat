@@ -66,3 +66,19 @@ fn delete_is_refused_inside_strings() {
     refused("n \"a\u{7F}b\"");
     refused("no\u{7F}de");
 }
+
+#[test]
+fn consecutive_slashdashed_nodes_with_blocks_are_valid() {
+    assert!(names("/-n {a}\n/-m {b}").is_empty(), "nothing left");
+    assert_eq!(names("/-n {a}\n/-m {b}\nk"), ["k"]);
+    assert_eq!(names("p { /-n {a}; /-m {b} }"), ["p"]);
+    assert!(names("/-n {}; /-n {}; /-n {}").is_empty(), "nothing left");
+}
+
+#[test]
+fn entries_may_not_follow_a_child_block() {
+    refused("n {a} x");
+    refused("n {a} k=1");
+    refused("/-n {a} /-x");
+    refused("n {a} /-x");
+}

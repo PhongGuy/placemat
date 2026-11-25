@@ -966,6 +966,10 @@ impl<'text> Parser<'text> {
                                 None => break Some(end),
                             },
                             InnerEvent::Done => break Some(InnerEvent::Done),
+                            // A slashdashed sibling continues the skip but owns its own block.
+                            InnerEvent::Node { sd: true, .. } if depth == 0 => {
+                                owns_real_block = false;
+                            }
                             InnerEvent::Node { .. } | InnerEvent::PropValue { .. } => {}
                         }
                     };

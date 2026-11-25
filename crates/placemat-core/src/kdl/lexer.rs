@@ -219,9 +219,6 @@ impl<'text> Grammar<'text> {
     fn eof(&self) -> Error {
         Error::UnexpectedEof(self.0.len())
     }
-    // TODO: i realize now this could be written a lot better as a
-    // "(&Self, Pos) -> (char, Pos)", kinda like every other parser
-    // would require rewriting every single parse rule but could be nice
     fn top_char(&self, at: Pos) -> Option<char> {
         self.tail(at).chars().next()
     }
@@ -777,7 +774,7 @@ impl<'text> Grammar<'text> {
         let at = self.bom(at).unwrap_or(at);
         self.start_node(at, true)
     }
-    // TODO: in the next release of KDL, this syntax changes!
+    // One step after a node's name or entry, by what comes next:
     // node-space* eob -> End
     // node-space* node-terminator start-node (if !root) -> Node
     // node-space+ slashdash? node-prop-or-arg (if props) -> PropValue

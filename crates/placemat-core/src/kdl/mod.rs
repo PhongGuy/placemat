@@ -1,5 +1,13 @@
 //! KDL v2 reading: [`parse`] turns any text into a bounded tree or a byte-positioned
 //! [`ReadError`], never panicking, recursing per level or printing.
+#![deny(
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::dbg_macro,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::arithmetic_side_effects
+)]
 
 mod lexer;
 

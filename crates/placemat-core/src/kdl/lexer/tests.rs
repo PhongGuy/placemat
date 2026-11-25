@@ -32,6 +32,28 @@ fn the_fork_keeps_its_deny_lints() {
     }
 }
 
+#[test]
+fn the_tree_builder_shares_the_deny_lints() {
+    let source = include_str!("../mod.rs");
+    assert!(
+        source.contains("#![deny("),
+        "mod.rs has no module-level deny"
+    );
+    for lint in [
+        "indexing_slicing",
+        "string_slice",
+        "dbg_macro",
+        "print_stdout",
+        "print_stderr",
+        "arithmetic_side_effects",
+    ] {
+        assert!(
+            source.contains(&format!("clippy::{lint}")),
+            "mod.rs lacks deny({lint})"
+        );
+    }
+}
+
 fn first_value(text: &str) -> Result<Value<'_>, Error> {
     for event in Parser::new(text) {
         if let Event::Entry { value, .. } = event? {

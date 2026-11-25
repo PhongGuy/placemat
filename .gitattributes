@@ -1,0 +1,3 @@
+assets/icon/generated/** binary
+# The trusted update keys must keep their exact bytes on every checkout.
+assets/update/* -text

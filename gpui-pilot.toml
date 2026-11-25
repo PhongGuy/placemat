@@ -1,0 +1,8 @@
+# How gpui-pilot builds and launches Placemat for an agent; see tools/placemat-pilot.
+[headless]
+build = ["cargo", "build", "--manifest-path", "tools/placemat-pilot/Cargo.toml"]
+binary = "tools/placemat-pilot/target/debug/placemat-pilot"
+
+[session]
+build = ["cargo", "build", "-p", "placemat-app", "--bin", "placemat", "--profile", "timing"]
+binary = "target/timing/placemat"

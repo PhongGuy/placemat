@@ -1,0 +1,48 @@
+name: Bug report
+description: Something is broken, crashes or gives a wrong result.
+labels: [bug]
+assignees: [PhongGuy]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Issues are public, so leave out anything from a private repository you would not share.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps, or the smallest board or page file, that shows it.
+      placeholder: |
+        1. Open ...
+        2. Draw ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Placemat version
+      description: From `placemat --version`.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Arch Linux (Wayland), macOS 15.4, Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Remove anything private before pasting.
+      render: text

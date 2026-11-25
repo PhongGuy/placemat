@@ -1,0 +1,199 @@
+# The gate on every push to master and every pull request. The Linux job runs what `make check`
+# runs locally, with a locked Cargo.lock, plus the workflow lint, the script tests, the icons
+# and the notices. macOS runs clippy only, and the pilot job drives the app through the headless
+# gpui-pilot scenarios on software Vulkan.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+  # GPUI's system libraries for the app.
+  LINUX_BUILD_DEPS: pkg-config libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan1 libegl1
+
+jobs:
+  gate:
+    runs-on: ubuntu-26.04
+    # ASSUMED until the first cold run is measured; the cache saves only after a green run.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The mirror can serve debs at dial-up speed, so they are cached under a hash of apt's
+      # install plan: a new package or version misses, and a near miss restores the rest.
+      - name: Plan build dependencies
+        id: apt-plan
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          prefix="apt-debs-$ImageOS-$RUNNER_ARCH-"
+          plan=$(apt-get install -s --no-install-recommends $LINUX_BUILD_DEPS | { grep '^Inst ' || true; } | sha256sum | cut -c1-16)
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$plan" >> "$GITHUB_OUTPUT"
+      - name: Restore cached build dependencies
+        id: apt-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-debs
+          key: ${{ steps.apt-plan.outputs.key }}
+          restore-keys: ${{ steps.apt-plan.outputs.prefix }}
+      # apt writes each finished deb straight into the cached directory, so a slow mirror
+      # that times out this step still leaves its progress for the save below.
+      - name: Download build dependencies
+        id: apt-download
+        timeout-minutes: 20
+        env:
+          DEBS: ${{ runner.temp }}/apt-debs
+        run: |
+          mkdir -p "$DEBS/partial"
+          sudo apt-get install -y --no-install-recommends --download-only -o Dir::Cache::Archives="$DEBS" $LINUX_BUILD_DEPS
+      - name: Install build dependencies
+        timeout-minutes: 10
+        env:
+          DEBS: ${{ runner.temp }}/apt-debs
+        run: sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$DEBS" $LINUX_BUILD_DEPS
+      # The cache action tars as the runner user, so apt's root-owned lock and half-fetched
+      # files go and the rest changes hands.
+      - name: Prepare build dependencies for saving
+        if: always() && github.event_name == 'push' && steps.apt-restore.outputs.cache-hit != 'true' && steps.apt-plan.outcome == 'success'
+        timeout-minutes: 2
+        env:
+          DEBS: ${{ runner.temp }}/apt-debs
+        run: |
+          mkdir -p "$DEBS"
+          sudo rm -rf "$DEBS/partial" "$DEBS/lock"
+          sudo chown -R "$(id -u):$(id -g)" "$DEBS"
+      # Only master writes the cache, so a pull request can read it but never poison it. An
+      # unfinished download saves under a partial key that the restore prefix picks up next
+      # run, so an exact hit always means every deb is there.
+      - name: Save build dependencies
+        if: always() && github.event_name == 'push' && steps.apt-restore.outputs.cache-hit != 'true' && steps.apt-plan.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-debs
+          key: ${{ steps.apt-download.outcome == 'success' && steps.apt-plan.outputs.key || format('{0}partial-{1}-{2}', steps.apt-plan.outputs.prefix, github.run_id, github.run_attempt) }}
+      - name: Install cargo-about
+        run: cargo install --locked cargo-about --version 0.9.2 --features cli
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny --version 0.20.2
+      - name: Gate
+        run: make LOCKED=--locked workflows-lint script-test check icons-check notices-check
+
+  macos-clippy:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -Dwarnings
+
+  pilot:
+    runs-on: ubuntu-26.04
+    # ASSUMED until the first cold run is measured.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      # The timing app builds in the root workspace, the pilot and its tests in their own.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            . -> target
+            tools/placemat-pilot -> target
+      # The runner has no GPU, so GPUI renders headless on mesa's software Vulkan (lavapipe).
+      # The mirror can serve debs at dial-up speed, so they are cached under a hash of apt's
+      # install plan: a new package or version misses, and a near miss restores the rest.
+      - name: Plan build dependencies
+        id: apt-plan
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update
+          prefix="apt-debs-$ImageOS-$RUNNER_ARCH-"
+          plan=$(apt-get install -s --no-install-recommends $LINUX_BUILD_DEPS mesa-vulkan-drivers | { grep '^Inst ' || true; } | sha256sum | cut -c1-16)
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$plan" >> "$GITHUB_OUTPUT"
+      - name: Restore cached build dependencies
+        id: apt-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-debs
+          key: ${{ steps.apt-plan.outputs.key }}
+          restore-keys: ${{ steps.apt-plan.outputs.prefix }}
+      # apt writes each finished deb straight into the cached directory, so a slow mirror
+      # that times out this step still leaves its progress for the save below.
+      - name: Download build dependencies
+        id: apt-download
+        timeout-minutes: 20
+        env:
+          DEBS: ${{ runner.temp }}/apt-debs
+        run: |
+          mkdir -p "$DEBS/partial"
+          sudo apt-get install -y --no-install-recommends --download-only -o Dir::Cache::Archives="$DEBS" $LINUX_BUILD_DEPS mesa-vulkan-drivers
+      - name: Install build dependencies
+        timeout-minutes: 10
+        env:
+          DEBS: ${{ runner.temp }}/apt-debs
+        run: sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$DEBS" $LINUX_BUILD_DEPS mesa-vulkan-drivers
+      # The cache action tars as the runner user, so apt's root-owned lock and half-fetched
+      # files go and the rest changes hands.
+      - name: Prepare build dependencies for saving
+        if: always() && github.event_name == 'push' && steps.apt-restore.outputs.cache-hit != 'true' && steps.apt-plan.outcome == 'success'
+        timeout-minutes: 2
+        env:
+          DEBS: ${{ runner.temp }}/apt-debs
+        run: |
+          mkdir -p "$DEBS"
+          sudo rm -rf "$DEBS/partial" "$DEBS/lock"
+          sudo chown -R "$(id -u):$(id -g)" "$DEBS"
+      # Only master writes the cache, so a pull request can read it but never poison it. An
+      # unfinished download saves under a partial key that the restore prefix picks up next
+      # run, so an exact hit always means every deb is there.
+      - name: Save build dependencies
+        if: always() && github.event_name == 'push' && steps.apt-restore.outputs.cache-hit != 'true' && steps.apt-plan.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-debs
+          key: ${{ steps.apt-download.outcome == 'success' && steps.apt-plan.outputs.key || format('{0}partial-{1}-{2}', steps.apt-plan.outputs.prefix, github.run_id, github.run_attempt) }}
+      - name: Check that lavapipe is installed
+        run: |
+          ls /usr/share/vulkan/icd.d/
+          test -n "$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' | head -n 1)"
+      # gpui-pilot v0.7.0 (gpui-kit 0.11.0), pinned to the tag's commit; rust-cache keeps ~/.cargo/bin.
+      - name: Install gpui-pilot
+        run: >-
+          cargo install --locked gpui-pilot
+          --git https://github.com/PhongGuy/gpui-pilot
+          --rev 5ceb76f3d0dc4ca7bfe37bae8a28ff21005668e9
+      - name: Pilot scenarios
+        run: make LOCKED=--locked pilot-check

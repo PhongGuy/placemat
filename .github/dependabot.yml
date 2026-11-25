@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Cargo monthly, as one grouped PR. The gpui crates move together with a matching
+  # gpui-pilot release, so they are bumped by hand.
+  - package-ecosystem: "cargo"
+    directories:
+      - "/"
+      - "/tools/placemat-pilot"
+    schedule:
+      interval: "monthly"
+    groups:
+      cargo:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "gpui*"
+  # The SHA-pinned workflow actions, monthly, as one grouped PR.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

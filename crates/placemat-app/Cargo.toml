@@ -1,0 +1,55 @@
+[package]
+name = "placemat-app"
+version.workspace = true
+description = "The Placemat desktop app: a GPUI shell over placemat-core"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "placemat"
+path = "src/main.rs"
+
+[dependencies]
+# Unused in code so far: linking it runs its build script, which refuses a release build
+# that trusts no real update key.
+placemat-core = { path = "../placemat-core" }
+gpui-kit.workspace = true
+thiserror.workspace = true
+# Unused directly: turns on `debug-embed` for the kit's icon set, so debug builds carry
+# their SVGs instead of reading them from the cargo registry at runtime.
+rust-embed = { version = "=8.13.0", features = ["debug-embed"] }
+# Same version gpui links, so `RgbaImage` is the type `WindowOptions.icon` takes.
+image = { version = "=0.25.10", default-features = false, features = ["png", "gif", "jpeg", "webp", "bmp"] }
+
+[package.metadata.packager]
+productName = "Placemat"
+identifier = "dev.placemat.app"
+description = "A repo-native whiteboard, diagram and notes app"
+longDescription = "Placemat keeps hand-drawn boards, diagrams, ERD tables and markdown pages as plain files in your git repository."
+authors = ["The Placemat authors"]
+category = "Productivity"
+binaries = [{ path = "placemat", main = true }]
+icons = [
+    "../../assets/icon/generated/png/*.png",
+    "../../assets/icon/generated/placemat.icns",
+    "../../assets/icon/generated/placemat.ico",
+]
+# Licence texts for the bundled fonts and icons, installed flat beside the binary; the
+# generated notices are added by `cargo xtask packager-config`.
+resources = ["../../licenses/*.txt"]
+
+[package.metadata.packager.deb]
+depends = ["libxcb1", "libxkbcommon0", "libxkbcommon-x11-0", "libvulkan1", "libwayland-client0", "libwayland-egl1", "libegl1", "libstdc++6"]
+section = "graphics"
+# cargo-packager's default template plus StartupWMClass, so the shell matches the window to it.
+desktopTemplate = "packaging/placemat.desktop"
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

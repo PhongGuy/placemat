@@ -1,0 +1,31 @@
+name: Performance
+description: Slow, laggy, or using too much memory or CPU.
+labels: [perf]
+assignees: [PhongGuy]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What is slow
+      description: The action, how long it takes, and how long you would expect.
+    validations:
+      required: true
+  - type: textarea
+    id: size
+    attributes:
+      label: Size
+      description: How many shapes, pages or tables are involved, and the file sizes.
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Version, OS and hardware
+      placeholder: v0.1.0, Ubuntu 24.04, 16 GB RAM, integrated GPU
+    validations:
+      required: true
+  - type: textarea
+    id: measure
+    attributes:
+      label: Measurements
+      description: Timings, memory readings or a profile, if you have them.

@@ -1,0 +1,16 @@
+[package]
+name = "placemat-core"
+version.workspace = true
+description = "Placemat's UI-free core"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+minisign-verify.workspace = true
+thiserror.workspace = true

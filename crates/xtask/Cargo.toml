@@ -1,0 +1,30 @@
+[package]
+name = "xtask"
+version.workspace = true
+description = "Repository automation for Placemat"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+# No text or raster images in the SVGs, so fonts and image decoders stay out.
+resvg = { version = "=0.49.0", default-features = false }
+ico = "=0.6.0"
+# PNG slots only; drops the JPEG 2000 codec.
+icns = { version = "=0.5.0", default-features = false, features = ["pngio"] }
+
+[dev-dependencies]
+toml = "1.1.8"
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"

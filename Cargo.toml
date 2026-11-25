@@ -1,0 +1,47 @@
+[workspace]
+members = ["crates/placemat-core", "crates/placemat-app", "crates/xtask"]
+# The pilot crate pins its own gpui-pilot host and keeps its own lock.
+exclude = ["tools/placemat-pilot"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# The Rust rules as lints, so CI enforces them; every crate opts in with `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+ref_option = "warn"
+wildcard_imports = "warn"
+clone_on_ref_ptr = "warn"
+wildcard_enum_match_arm = "warn"
+missing_assert_message = "warn"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+base64 = "0.23.1"
+clap = { version = "4.6.7", features = ["derive"] }
+gpui-kit = { version = "=0.11.0", features = ["tree-sitter", "tree-sitter-bash", "tree-sitter-javascript", "tree-sitter-sql"] }
+minisign-verify = "=0.3.0"
+serde_json = "1.0.152"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+
+# The session app under gpui-pilot: dev, but optimised so frame timings mean something.
+[profile.timing]
+inherits = "dev"
+opt-level = 3
+debug = 0
+
+[profile.release]
+strip = true
+lto = "thin"

@@ -373,3 +373,33 @@ fn an_arrow_label_is_centred_on_the_shaft() {
         b.bounds
     );
 }
+
+#[test]
+fn a_dot_head_is_an_outlined_circle_as_wide_as_the_chevron() {
+    let mut a = Arrow::new(
+        ArrowEnd::Free(Point::new(0, 0)),
+        ArrowEnd::Free(Point::new(300, 0)),
+    );
+    a.heads.end = Head::Dot;
+    let mut e = el(7, Kind::Arrow(a));
+    (e.stroke.width, e.stroke.roughness) = (20, 0);
+    let b = built(&e);
+    // Head length max(10, 4 * 2) = 10, so the circle's radius is 10 * sin(25 deg).
+    let r = 10.0 * 25f32.to_radians().sin();
+    let head = b.geometry.rough.get(1..2).unwrap();
+    assert!(!is_dot(head), "{head:?}");
+    let reach = head
+        .iter()
+        .flat_map(|s| &s.ops)
+        .flat_map(|op| match *op {
+            Op::Move(x, y) | Op::Line(x, y) => vec![(x, y)],
+            Op::Cubic([a, b, c, d, e, f]) => vec![(a, b), (c, d), (e, f)],
+        })
+        .map(|(x, y)| (x - 300.0).hypot(y))
+        .fold(0.0, f32::max);
+    assert!(
+        (0.9 * r..=1.2 * r).contains(&reach),
+        "reach {reach}, radius {r}"
+    );
+    assert!(b.bounds.x1 >= f64::from(300.0 + 0.9 * r), "{:?}", b.bounds);
+}

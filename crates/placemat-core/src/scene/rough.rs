@@ -231,7 +231,8 @@ fn shaft(dx: f32, dy: f32, start: Head, end: Head, style: &Style) -> Geometry {
 }
 
 /// One head at `tip`, pointing along the unit `dir`: its wings lie `size` back at 25 degrees
-/// either side, a bar spans the same width across the tip.
+/// either side, a bar spans the same width across the tip, and a dot is an outlined circle of
+/// that width centred on it.
 fn head(kind: Head, tip: (f32, f32), dir: (f32, f32), size: f32, style: &Style) -> Vec<OpSet> {
     let (sin, cos) = 25f32.to_radians().sin_cos();
     let wing = |s: f32| {
@@ -249,7 +250,10 @@ fn head(kind: Head, tip: (f32, f32), dir: (f32, f32), size: f32, style: &Style) 
             let (nx, ny) = (-dir.1 * size * sin, dir.0 * size * sin);
             sets(generator.line(tip.0 - nx, tip.1 - ny, tip.0 + nx, tip.1 + ny, &options))
         }
-        Head::Dot => dot(tip, style.width).rough,
+        Head::Dot => {
+            let d = 2.0 * size * sin;
+            sets(generator.ellipse(tip.0, tip.1, d, d, &options))
+        }
     }
 }
 

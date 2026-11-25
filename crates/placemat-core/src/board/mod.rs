@@ -6,6 +6,7 @@
 mod escape;
 mod load;
 mod model;
+mod open;
 mod repair;
 mod rng;
 mod write;
@@ -18,6 +19,7 @@ pub use model::{
     Align, Anchor, Arrow, ArrowEnd, Boxed, Colour, Dash, Element, ElementId, Fill, FillStyle, Font,
     FontFamily, Head, Heads, Kind, Path, Point, Seed, Size, Stroke, Text,
 };
+pub use open::{OpenError, read_file};
 pub use rng::Rng;
 pub use write::{WriteError, write};
 pub use zkey::ZKey;

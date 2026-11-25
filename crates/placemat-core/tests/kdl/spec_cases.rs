@@ -84,6 +84,15 @@ fn entries_may_not_follow_a_child_block() {
 }
 
 #[test]
+fn bare_float_keywords_are_not_identifiers() {
+    for text in ["n inf", "n -inf", "n nan", "-inf", "n k=-inf", "n (t)-inf"] {
+        refused(text);
+    }
+    // Only the exact words are excluded; a sign or suffix makes an ordinary identifier.
+    assert_eq!(names("n +inf -nan +nan -infx"), ["n"]);
+}
+
+#[test]
 fn a_line_continuation_may_end_on_crlf() {
     // `escline := '\\' ws* (single-line-comment | newline | eof)`, and CRLF is one newline.
     for text in ["n \\\r\n  k=1", "n \\ // note\r\n  k=1", "n \\\r  k=1"] {

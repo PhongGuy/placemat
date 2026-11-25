@@ -1,9 +1,10 @@
 //! The loader: untrusted bytes pass the byte cap, strict UTF-8 and the bounded KDL reader, then
 //! the tree maps onto the model element by element, each refusal carrying its line and column.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::model::Unknown;
+use super::repair::repair;
 use super::write::{entry_text, node_text};
 use super::{
     ANCHOR_MAX, Align, Anchor, Arrow, ArrowEnd, Board, Boxed, COORD_MAX, Colour, Dash, Element,
@@ -134,7 +135,8 @@ pub enum LoadError {
 
 /// Loads board bytes into the model, never panicking. A seed past [`Seed::MAX`] is clamped and
 /// a malformed z key is replaced by the empty key (written `z ""`, painted last), each with a
-/// warning.
+/// warning. Later duplicate ids are renamed deterministically, and an arrow end bound to a
+/// missing id becomes a free end at the arrow's other end, clamped to ±2^24, each with a warning.
 ///
 /// # Errors
 ///
@@ -153,19 +155,21 @@ pub fn load(bytes: &[u8]) -> Result<Loaded, LoadError> {
         .filter(|e| e.key.as_deref() != Some("version"))
         .map(entry_text)
         .collect();
-    let (mapped, keyed, unkeyed) = map(text, body)?;
+    let (mut mapped, unknown_keys, keyed, unkeyed) = map(text, body)?;
     let board =
         Board::with_unknown(version, header, keyed, unkeyed).ok_or(LoadError::OverLimit {
             limit: "unknown_bytes_total",
             id: None,
         })?;
-    let mut warnings: Vec<Warning> = mapped
-        .iter()
-        .filter(|m| m.seed_clamped)
-        .map(|m| Warning::SeedClamped {
-            id: m.element.id.clone(),
-        })
-        .collect();
+    let mut warnings = repair(&mut mapped, &unknown_keys);
+    warnings.extend(
+        mapped
+            .iter()
+            .filter(|m| m.seed_clamped)
+            .map(|m| Warning::SeedClamped {
+                id: m.element.id.clone(),
+            }),
+    );
     warnings.extend(
         mapped
             .iter()
@@ -262,17 +266,24 @@ fn invalid(text: &str, id: Option<ElementId>, bad: Bad) -> LoadError {
     }
 }
 
-/// One element as read, with where it starts and what the load repaired in it.
-struct Mapped {
-    element: Element,
+/// One element as read, with where it sits and what the load repaired in it.
+pub(crate) struct Mapped {
+    pub(crate) element: Element,
+    /// Its position among the top-level nodes after the header.
+    pub(crate) index: usize,
     start: u32,
     seed_clamped: bool,
     z_invalid: bool,
 }
 
-/// The top-level nodes after the header: elements, unknown nodes keyed by their first string
-/// argument, and unkeyed unknown nodes.
-type Mapping = (Vec<Mapped>, BTreeMap<String, Vec<String>>, Vec<String>);
+/// The top-level nodes after the header: elements, the unknown nodes' keys with their
+/// positions, unknown nodes keyed by their first string argument, and unkeyed unknown nodes.
+type Mapping = (
+    Vec<Mapped>,
+    Vec<(String, usize)>,
+    BTreeMap<String, Vec<String>>,
+    Vec<String>,
+);
 
 /// Maps every top-level node after the header in file order, stopping at the first element
 /// past the count limit so a huge file is not mapped in full first. Unknown nodes are kept in
@@ -280,15 +291,18 @@ type Mapping = (Vec<Mapped>, BTreeMap<String, Vec<String>>, Vec<String>);
 fn map(text: &str, body: &[Node]) -> Result<Mapping, LoadError> {
     let mut mapped = Vec::new();
     let (mut keyed, mut unkeyed) = (BTreeMap::<String, Vec<String>>::new(), Vec::new());
-    let mut seen = BTreeSet::new();
-    for node in body {
+    let mut unknown_keys = Vec::new();
+    for (index, node) in body.iter().enumerate() {
         let Some(lines) = lines_of(&node.name) else {
             match node.entries.first() {
                 Some(Entry {
                     key: None,
                     value: Value::String(key),
                     ..
-                }) => keyed.entry(key.clone()).or_default().push(node_text(node)),
+                }) => {
+                    unknown_keys.push((key.clone(), index));
+                    keyed.entry(key.clone()).or_default().push(node_text(node));
+                }
                 _ => unkeyed.push(node_text(node)),
             }
             continue;
@@ -300,13 +314,11 @@ fn map(text: &str, body: &[Node]) -> Result<Mapping, LoadError> {
             });
         }
         let id = element_id(node).map_err(|b| invalid(text, None, b))?;
-        if !seen.insert(id.clone()) {
-            return Err(invalid(text, Some(id), bad(node.start, "duplicate id")));
-        }
-        let m = element(node, id.clone(), lines).map_err(|b| invalid(text, Some(id), b))?;
+        let mut m = element(node, id.clone(), lines).map_err(|b| invalid(text, Some(id), b))?;
+        m.index = index;
         mapped.push(m);
     }
-    Ok((mapped, keyed, unkeyed))
+    Ok((mapped, unknown_keys, keyed, unkeyed))
 }
 
 /// Fills the board through [`Board::insert`], so its running totals match its elements and
@@ -412,6 +424,7 @@ fn element(node: &Node, id: ElementId, names: &'static [&'static str]) -> Result
     };
     Ok(Mapped {
         element,
+        index: 0,
         start: node.start,
         seed_clamped,
         z_invalid,

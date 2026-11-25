@@ -10,6 +10,7 @@ mod edit;
 mod load;
 mod model;
 mod order;
+mod repair;
 mod unknown;
 mod util;
 mod write;

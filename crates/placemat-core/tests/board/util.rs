@@ -218,3 +218,11 @@ pub fn all_kinds_board() -> Board {
     }
     b
 }
+
+/// A fixture under `tests/fixtures/boards/`, read as text.
+pub fn fixture(rel: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/boards")
+        .join(rel);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}

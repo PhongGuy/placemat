@@ -6,6 +6,7 @@
 mod escape;
 mod load;
 mod model;
+mod repair;
 mod rng;
 mod write;
 mod zkey;

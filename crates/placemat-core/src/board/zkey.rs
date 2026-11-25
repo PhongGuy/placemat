@@ -5,6 +5,10 @@ use std::cmp::Ordering;
 /// Longest valid key, in characters.
 const MAX_LEN: usize = 64;
 
+/// The base62 digits in ascending value, the only characters a key may hold.
+pub(crate) const BASE62: &[u8; 62] =
+    b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
 /// A paint-order key: 1 to 64 base62 characters, not ending in `0`, compared by bytes. A key
 /// loaded malformed is held as the empty key, written `z ""`, and sorts after every valid key.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -15,7 +19,7 @@ impl ZKey {
     /// The key spelled `s`, or `None` when `s` is not 1 to 64 base62 characters or ends in `0`.
     pub fn new(s: &str) -> Option<Self> {
         let valid = (1..=MAX_LEN).contains(&s.len())
-            && s.bytes().all(|b| b.is_ascii_alphanumeric())
+            && s.bytes().all(|b| BASE62.contains(&b))
             && !s.ends_with('0');
         valid.then(|| Self(s.to_owned()))
     }

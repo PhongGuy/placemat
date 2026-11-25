@@ -1,0 +1,50 @@
+placemat-board version=0
+
+rect "a1Xq" {
+    at 100 100
+    seed 1
+    size 200 100
+    fill none
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a1"
+}
+
+arrow "k4Ar" {
+    from 1000 100
+    seed 2
+    to 1000 100
+    head start=none end=arrow
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a2"
+}
+
+arrow "m2Zz" {
+    from "a1Xq" x=1 y=0.5
+    seed 3
+    to 300 150
+    head start=none end=arrow
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a3"
+}
+
+arrow "n3Yy" {
+    from 0 0
+    seed 4
+    to 0 0
+    head start=none end=arrow
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a4"
+}
+
+arrow "p5Ww" {
+    from "w1" x=0 y=0
+    seed 5
+    to "a1Xq" x=0 y=1
+    head start=none end=arrow
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a5"
+}
+
+widget "w1" {
+    colour "#ff0000"
+}

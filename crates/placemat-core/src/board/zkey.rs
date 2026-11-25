@@ -20,6 +20,11 @@ impl ZKey {
         valid.then(|| Self(s.to_owned()))
     }
 
+    /// The malformed placeholder a load puts in place of an unreadable key.
+    pub(crate) fn empty() -> Self {
+        Self(String::new())
+    }
+
     /// The key's text; empty for a key loaded malformed.
     pub fn as_str(&self) -> &str {
         &self.0

@@ -7,6 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod edit;
+mod load;
 mod model;
 mod order;
 mod util;

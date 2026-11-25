@@ -4,6 +4,7 @@
 //! anchors are plain numbers; [`Board`]'s mutators check them and every limit in [`LIMITS`].
 
 mod escape;
+mod load;
 mod model;
 mod rng;
 mod write;
@@ -11,6 +12,7 @@ mod zkey;
 
 use std::collections::BTreeMap;
 
+pub use load::{Access, End, LoadError, Loaded, Warning, load};
 pub use model::{
     Align, Anchor, Arrow, ArrowEnd, Boxed, Colour, Dash, Element, ElementId, Fill, FillStyle, Font,
     FontFamily, Head, Heads, Kind, Path, Point, Seed, Size, Stroke, Text,

@@ -1,5 +1,8 @@
-//! Scene geometry for a board: the value types that carry each element's hand-drawn world
-//! geometry, its label and its bounds, plus the text measurer that layout is injected with.
+//! A board turned into cached, sanitised, hand-drawn world geometry. [`Scene`] holds one entry
+//! per element in paint order, answers what a view rectangle touches with a flat bounds scan,
+//! and stays current only through [`Scene::invalidate`], which also redraws bound arrows. Text
+//! is laid out through an injected [`TextMeasure`]; [`Camera`] and the view rules map world
+//! units to screen pixels and pick the detail level, dash pattern and label size.
 #![deny(
     clippy::indexing_slicing,
     clippy::string_slice,

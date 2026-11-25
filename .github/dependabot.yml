@@ -14,6 +14,13 @@ updates:
           - "*"
     ignore:
       - dependency-name: "gpui*"
+      # roughr's jitter flows through rand 0.8's StdRng (ChaCha12 from rand_chacha over rand_core),
+      # so a bump of any of them changes every board's strokes; they move by hand with the scene
+      # golden test. The ignore covers both directories, since the pilot lock carries placemat-core.
+      - dependency-name: "roughr"
+      - dependency-name: "rand"
+      - dependency-name: "rand_chacha"
+      - dependency-name: "rand_core"
   # The SHA-pinned workflow actions, monthly, as one grouped PR.
   - package-ecosystem: "github-actions"
     directory: "/"

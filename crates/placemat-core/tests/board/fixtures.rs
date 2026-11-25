@@ -1,12 +1,9 @@
 //! Fixture round trips, the generator's round trip, and a board filled to every limit.
 
-use placemat_core::board::{
-    Access, Anchor, Arrow, ArrowEnd, Board, Colour, Dash, Element, Head, Kind, LIMITS, Path, Point,
-    Seed, Warning, WriteError, load, write,
-};
+use placemat_core::board::{Access, Board, LIMITS, Warning, WriteError, load, write};
 
 use crate::boardgen;
-use crate::util::{all_kinds_board, fixture, id, limit, rect, seed, z};
+use crate::util::{all_kinds_board, fixture, limit, limits_board, rect};
 
 const CANONICAL: [&str; 10] = [
     "arrow", "diamond", "ellipse", "empty", "escapes", "freedraw", "line", "rect", "text",
@@ -84,42 +81,9 @@ fn generated_boards_round_trip_and_write_idempotently() {
     }
 }
 
-fn widest(e: &mut Element) {
-    e.stroke.colour = Colour::rgba(0xff, 0xff, 0xff, 0xff);
-    (e.stroke.width, e.stroke.roughness, e.stroke.dash) = (999, 99, Dash::Dashed);
-}
-
 #[test]
 fn a_board_at_every_limit_stays_under_the_hard_cap_and_reopens() {
-    let blob = "a".repeat(LIMITS.unknown_bytes_total - 64);
-    let start = format!("placemat-board version=0\n\nwidget \"w\" blob=\"{blob}\"\n");
-    let mut b = load(start.as_bytes()).unwrap().board;
-    let wid = |i: usize| id(&format!("{i:0>32}"));
-    let zmax = z(&"z".repeat(64));
-    let t = 167_772_159;
-    let pens = LIMITS.points_total / LIMITS.points_per_element;
-    for i in 0..pens {
-        let path = Path::new(
-            Point::new(-(1 << 24), -(1 << 24)),
-            vec![Point::new(-t, -t); LIMITS.points_per_element],
-        );
-        let mut e = Element::new(wid(i), seed(Seed::MAX), zmax.clone(), Kind::Freedraw(path));
-        widest(&mut e);
-        b.insert(e).unwrap();
-    }
-    let per_label = LIMITS.string_bytes_total / (LIMITS.elements - pens);
-    for i in pens..LIMITS.elements {
-        let end = |n: usize| ArrowEnd::Bound {
-            target: wid(n),
-            anchor: Anchor::new(1234, 5678),
-        };
-        let mut a = Arrow::new(end(i % pens), end((i + 1) % pens));
-        (a.heads.start, a.heads.end) = (Head::Triangle, Head::Triangle);
-        a.label = Some("a".repeat(per_label));
-        let mut e = Element::new(wid(i), seed(Seed::MAX), zmax.clone(), Kind::Arrow(a));
-        widest(&mut e);
-        b.insert(e).unwrap();
-    }
+    let mut b = limits_board();
     assert_eq!(limit(b.insert(rect("over", 0, 0))), Err("elements"));
     let text = write(&b).unwrap();
     println!(

@@ -1,0 +1,39 @@
+placemat-board version=0
+
+rect "3kTq8wZp" {
+    at 80 120
+    seed 1640275519
+    size 200 100
+    fill "#a5d8ff" style=hachure
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    label "Web client"
+    z "a1"
+}
+
+rect "7hWc4nRd" {
+    at 480 120
+    seed 288140027
+    size 200 100
+    fill "#b2f2bb" style=cross-hatch
+    stroke "#1e1e1e" width=2.5 roughness=0 dash=dashed
+    z "a2"
+}
+
+arrow "9rLm2xQe" {
+    from "3kTq8wZp" x=1 y=0.5
+    seed 905113748
+    to "7hWc4nRd" x=0 y=0.5
+    head start=none end=arrow
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    label "HTTPS"
+    z "a3"
+}
+
+arrow "aFree001" {
+    from 120 340
+    seed 7
+    to -40 -7
+    head start=bar end=triangle
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a4"
+}

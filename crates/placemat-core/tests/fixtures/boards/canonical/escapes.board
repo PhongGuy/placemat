@@ -1,0 +1,20 @@
+placemat-board version=0
+
+text "esc" {
+    at 0 0
+    seed 1
+    content "q\"b\\s\nn\rr\tt\bb\ff\u{0}\u{1b}\u{7f}\u{85}\u{200e}\u{202e}\u{2066}\u{2028}\u{feff}é漢🎉"
+    font family=hand size=20 align=left
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a1"
+}
+
+rect "uni" {
+    at 0 0
+    seed 2
+    size 1 1
+    fill none
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    label "日本語 ✓ \u{202e}txt.exe"
+    z "a2"
+}

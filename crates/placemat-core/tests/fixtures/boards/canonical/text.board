@@ -1,0 +1,19 @@
+placemat-board version=0
+
+text "q1Nf3jTb" {
+    at 80 260
+    seed 51807420
+    content "Sketch of the v1 request path.\nNot to scale."
+    font family=normal size=20.5 align=center
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "a9"
+}
+
+text "q2Code00" {
+    at -1 -1
+    seed 1
+    content "fn main() {}"
+    font family=code size=12 align=right
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    z "aA"
+}

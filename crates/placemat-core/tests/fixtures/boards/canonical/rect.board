@@ -1,0 +1,20 @@
+placemat-board version=0
+
+rect "3kTq8wZp" {
+    at 80 120
+    seed 1640275519
+    size 200 100
+    fill "#a5d8ff" style=hachure
+    stroke "#1e1e1e" width=2 roughness=1 dash=solid
+    label "Web client"
+    z "a1"
+}
+
+rect "7hWc4nRd" {
+    at 480 120
+    seed 288140027
+    size 200 100
+    fill "#b2f2bb" style=cross-hatch
+    stroke "#1e1e1e" width=2.5 roughness=0 dash=dashed
+    z "a2"
+}

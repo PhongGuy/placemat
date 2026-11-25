@@ -4,4 +4,5 @@
 
 pub mod board;
 pub mod kdl;
+pub mod scene;
 pub mod update;

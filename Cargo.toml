@@ -34,6 +34,7 @@ fastrand = "=2.5.0"
 gpui-kit = { version = "=0.11.0", features = ["tree-sitter", "tree-sitter-bash", "tree-sitter-javascript", "tree-sitter-sql"] }
 kdl = { version = "=6.7.1", default-features = false }
 minisign-verify = "=0.3.0"
+roughr = "=0.14.0"
 serde_json = "1.0.152"
 tempfile = "3.27.0"
 thiserror = "2.0.21"

@@ -62,22 +62,40 @@ pub(crate) enum Error {
     BadIndent(usize),
     /// Multiple children blocks are present for one node
     MultipleChildren(usize),
-    /// The file ended too early
-    UnexpectedEof,
+    /// The file ended too early; the position is always the text length
+    UnexpectedEof(usize),
     /// An always-invalid character at this position
     BannedChar(char, usize),
     /// A nesting or hash counter ran past `usize` here
     Overflow(usize),
 }
 
-type PResult<T> = Result<T, Error>;
-
-/// A inner representation of a number
-#[derive(Clone, Copy)]
-enum NumberInner {
-    F64(f64),
-    I128(i128),
+impl Error {
+    /// The byte position in the source text this error points at.
+    pub(crate) fn offset(&self) -> usize {
+        match *self {
+            Self::ExpectedSpace(at)
+            | Self::ExpectedCloseParen(at)
+            | Self::ExpectedComment(at)
+            | Self::ExpectedNewline(at)
+            | Self::ExpectedString(at)
+            | Self::ExpectedValue(at)
+            | Self::UnexpectedCloseBracket(at)
+            | Self::UnexpectedNewline(at)
+            | Self::InvalidNumber(at)
+            | Self::BadKeyword(at)
+            | Self::BadIdentifier(at)
+            | Self::BadEscape(at)
+            | Self::BadIndent(at)
+            | Self::MultipleChildren(at)
+            | Self::UnexpectedEof(at)
+            | Self::BannedChar(_, at)
+            | Self::Overflow(at) => at,
+        }
+    }
 }
+
+type PResult<T> = Result<T, Error>;
 
 /// a parsing event
 #[derive(Debug, PartialEq)]
@@ -88,6 +106,8 @@ pub(crate) enum Event<'text> {
         ty: Option<Cow<'text, str>>,
         /// Node name
         name: Cow<'text, str>,
+        /// Byte position of the name, after any type hint
+        start: usize,
     },
     /// A node value or property
     Entry {
@@ -97,12 +117,20 @@ pub(crate) enum Event<'text> {
         ty: Option<Cow<'text, str>>,
         /// Value
         value: Value<'text>,
+        /// Byte position of a property's key, or of an argument's value after its type hint
+        start: usize,
     },
     /// Start of children list for the previous node,
     /// will only be emitted once per node
-    Begin,
+    Begin {
+        /// Byte position of the `{`
+        offset: usize,
+    },
     /// End of children list
-    End,
+    End {
+        /// Byte position of the `}`
+        offset: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -111,17 +139,22 @@ enum InnerEvent<'text> {
         sd: bool,
         ty: Option<Cow<'text, str>>,
         name: Cow<'text, str>,
+        start: usize,
     },
     PropValue {
         sd: bool,
         ty: Option<Cow<'text, str>>,
         key: Option<Cow<'text, str>>,
         value: Value<'text>,
+        start: usize,
     },
     Begin {
         sd: bool,
+        offset: usize,
     },
-    End,
+    End {
+        offset: usize,
+    },
     Done,
 }
 
@@ -176,7 +209,10 @@ impl<'text> Grammar<'text> {
         self.0.get(at.0..).unwrap_or("")
     }
     fn slice(&self, from: Pos, to: Pos) -> PResult<&'text str> {
-        self.0.get(from.0..to.0).ok_or(Error::UnexpectedEof)
+        self.0.get(from.0..to.0).ok_or_else(|| self.eof())
+    }
+    fn eof(&self) -> Error {
+        Error::UnexpectedEof(self.0.len())
     }
     // TODO: i realize now this could be written a lot better as a
     // "(&Self, Pos) -> (char, Pos)", kinda like every other parser
@@ -220,72 +256,43 @@ impl<'text> Grammar<'text> {
         let text = text.strip_prefix('.').unwrap_or(text);
         text.as_bytes().first().is_some_and(u8::is_ascii_digit)
     }
-    /// `number`, assuming text is a valid ident
-    fn all_number(&self, at: Pos) -> Option<NumberInner> {
-        #[derive(Clone, Copy)]
-        enum Radix {
-            Binary = 2,
-            Octal = 8,
-            Decimal = 10,
-            Hexadecimal = 16,
+    /// `number`, checked for syntax only: the text stays as written, so no width limit applies.
+    /// Only lowercase radix prefixes count; `0X10` is a malformed decimal.
+    fn is_number(text: &str) -> bool {
+        // `digit (digit | '_')*` for a radix's digit class
+        fn digits(text: &str, digit: fn(&char) -> bool) -> bool {
+            let mut chars = text.chars();
+            chars.next().as_ref().is_some_and(digit) && chars.all(|ch| ch == '_' || digit(&ch))
         }
-        fn append(buf: &mut String, state: &mut bool, ch: char, radix: Radix) -> bool {
-            *state = match (radix, ch) {
-                (_, '_') if *state => return true,
-                (Radix::Binary, '0'..='1')
-                | (Radix::Octal, '0'..='7')
-                | (Radix::Decimal, '0'..='9')
-                | (Radix::Hexadecimal, '0'..='9' | 'a'..='f' | 'A'..='F') => true,
-                (Radix::Decimal, '.' | 'e' | 'E') if *state => false,
-                (Radix::Decimal, '+' | '-') => false,
-                _ => return false,
-            };
-            buf.push(ch);
-            true
+        fn decimal(ch: &char) -> bool {
+            ch.is_ascii_digit()
         }
-        // sign: +? uses unsigned, - uses signed
-        // [+-]?0b[01][01_]* -> int base 2
-        // [+-]?0o[0-7][0-7_]* -> int base 2
-        // [+-]?0x[0-9a-fA-F][0-9a-fA-F_]* -> int base 2
-        // [+-]?[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][+-]?[0-9][0-9_]*)?
-        let (at, negative) = match self.top_char(at) {
-            Some('-') => (at.offset_char('-'), true),
-            Some('+') => (at.offset_char('+'), false),
-            _ => (at, false),
+        let body = text.strip_prefix(['+', '-']).unwrap_or(text);
+        if let Some(hex) = body.strip_prefix("0x") {
+            return digits(hex, char::is_ascii_hexdigit);
+        }
+        if let Some(octal) = body.strip_prefix("0o") {
+            return digits(octal, |ch| matches!(ch, '0'..='7'));
+        }
+        if let Some(binary) = body.strip_prefix("0b") {
+            return digits(binary, |ch| matches!(ch, '0' | '1'));
+        }
+        // `integer ('.' integer)? (('e' | 'E') sign? integer)?`
+        let (mantissa, exponent) = match body.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => (mantissa, Some(exponent)),
+            None => (body, None),
         };
-        // TODO: this can definitely be done without allocating,
-        // but i don't know a good way of doing it without rewriting f64::from_str
-        let mut buffer = if negative {
-            "-".to_owned()
-        } else {
-            String::new()
+        let mantissa_ok = match mantissa.split_once('.') {
+            Some((whole, fraction)) => digits(whole, decimal) && digits(fraction, decimal),
+            None => digits(mantissa, decimal),
         };
-        let mut state = false;
-        let (at, radix) = match self.tail(at).as_bytes() {
-            [b'0', b'b', ..] => (at.offset_str("0b"), Radix::Binary),
-            [b'0', b'o', ..] => (at.offset_str("0o"), Radix::Octal),
-            [b'0', b'x', ..] => (at.offset_str("0x"), Radix::Hexadecimal),
-            _ => (at, Radix::Decimal),
-        };
-        for ch in self.tail(at).chars() {
-            if !append(&mut buffer, &mut state, ch, radix) {
-                return None;
-            }
-        }
-        let radix = radix as u32;
-        if let Ok(value) = i128::from_str_radix(&buffer, radix) {
-            Some(NumberInner::I128(value))
-        } else if radix == 10 {
-            if buffer.ends_with('.') {
-                None
-            } else if let Ok(value) = buffer.parse() {
-                Some(NumberInner::F64(value))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        mantissa_ok
+            && exponent.is_none_or(|exponent| {
+                digits(
+                    exponent.strip_prefix(['+', '-']).unwrap_or(exponent),
+                    decimal,
+                )
+            })
     }
     /// `single-line-comment` after `//`
     /// = `^newline* (newline | eof)`
@@ -318,7 +325,7 @@ impl<'text> Grammar<'text> {
                 match self.top_char(at) {
                     Some(ch) if Self::banned(ch) => return Err(Error::BannedChar(ch, at.0)),
                     Some(ch) => at = at.offset_char(ch),
-                    None => return Err(Error::UnexpectedEof),
+                    None => return Err(self.eof()),
                 }
             }
         }
@@ -413,7 +420,7 @@ impl<'text> Grammar<'text> {
     }
     /// string escape after \
     fn escape(&self, at: Pos) -> PResult<(Pos, Option<char>)> {
-        let (at, ch) = match self.top_char(at).ok_or(Error::UnexpectedEof)? {
+        let (at, ch) = match self.top_char(at).ok_or_else(|| self.eof())? {
             'n' => (at.offset_char('n'), Some('\n')),
             'r' => (at.offset_char('r'), Some('\r')),
             't' => (at.offset_char('t'), Some('\t')),
@@ -501,10 +508,10 @@ impl<'text> Grammar<'text> {
                             return Err(Error::ExpectedSpace(end.0));
                         }
                     }
-                    None => return Err(Error::UnexpectedEof),
+                    None => return Err(self.eof()),
                 }
             }
-            self.slice(start, first.ok_or(Error::UnexpectedEof)?)?
+            self.slice(start, first.ok_or_else(|| self.eof())?)?
         };
         lines
             .into_iter()
@@ -512,7 +519,7 @@ impl<'text> Grammar<'text> {
                 // entirely space line?
                 let mut at = start;
                 loop {
-                    let top = self.top_char(at).ok_or(Error::UnexpectedEof)?;
+                    let top = self.top_char(at).ok_or_else(|| self.eof())?;
                     if Self::newline(top) {
                         return Ok(String::new());
                     } else if !Self::space(top) {
@@ -538,7 +545,7 @@ impl<'text> Grammar<'text> {
                                     at = at.offset_char(ch);
                                 }
                             }
-                            None => break Err(Error::UnexpectedEof),
+                            None => break Err(self.eof()),
                         }
                     }
                 } else {
@@ -583,7 +590,7 @@ impl<'text> Grammar<'text> {
                         }
                         at = at.offset_char(ch);
                     }
-                    None => return Err(Error::UnexpectedEof),
+                    None => return Err(self.eof()),
                 }
             }
         } else {
@@ -630,7 +637,7 @@ impl<'text> Grammar<'text> {
                         }
                         at = at.offset_char(ch);
                     }
-                    None => return Err(Error::UnexpectedEof),
+                    None => return Err(self.eof()),
                 }
             }
         }
@@ -678,7 +685,7 @@ impl<'text> Grammar<'text> {
                 ))
             }
             Some('}') => Err(Error::UnexpectedCloseBracket(at.0)),
-            None => Err(Error::UnexpectedEof), // No character found, so probably EOF
+            None => Err(self.eof()), // No character found, so probably EOF
             _ => Err(Error::BadIdentifier(at.0)),
         }
     }
@@ -698,11 +705,8 @@ impl<'text> Grammar<'text> {
             next,
             match value {
                 SemiValue::String(text) => Value::String(text),
-                // The conversion still validates the number; the event carries its source text.
-                SemiValue::Number(text) => {
-                    parse_number(text).ok_or(Error::InvalidNumber(at.0))?;
-                    Value::Number(text)
-                }
+                SemiValue::Number(text) if Self::is_number(text) => Value::Number(text),
+                SemiValue::Number(_) => return Err(Error::InvalidNumber(at.0)),
                 SemiValue::Keyword("null") => Value::Null,
                 SemiValue::Keyword("true") => Value::Bool(true),
                 SemiValue::Keyword("false") => Value::Bool(false),
@@ -736,15 +740,24 @@ impl<'text> Grammar<'text> {
                 return Ok((at, InnerEvent::Done));
             }
         } else if self.top_char(at) == Some('}') {
-            return Ok((at.offset_char('}'), InnerEvent::End));
+            return Ok((at.offset_char('}'), InnerEvent::End { offset: at.0 }));
         }
         let next = self.slash_dash(at)?;
         let sd = next.is_some();
         let at = next.unwrap_or(at);
         let (at, ty) = self.type_hint(at)?;
         let at = self.node_space(at, false)?;
+        let start = at.0;
         let (at, name) = self.string(at)?;
-        Ok((at, InnerEvent::Node { sd, ty, name }))
+        Ok((
+            at,
+            InnerEvent::Node {
+                sd,
+                ty,
+                name,
+                start,
+            },
+        ))
     }
     fn begin_document(&self, at: Pos) -> PResult<(Pos, InnerEvent<'text>)> {
         let at = self.bom(at).unwrap_or(at);
@@ -762,7 +775,9 @@ impl<'text> Grammar<'text> {
             return Ok((at, InnerEvent::Done));
         }
         match self.top_char(at) {
-            Some('}') if !root => return Ok((at.offset_char('}'), InnerEvent::End)),
+            Some('}') if !root => {
+                return Ok((at.offset_char('}'), InnerEvent::End { offset: at.0 }));
+            }
             // node-terminator
             Some(';') => return self.start_node(at.offset_char(';'), root),
             Some('/') if self.top_char(at.offset_char('/')) == Some('/') => {
@@ -779,7 +794,7 @@ impl<'text> Grammar<'text> {
         let sd = next.is_some();
         let at = next.unwrap_or(at);
         if self.top_char(at) == Some('{') {
-            Ok((at.offset_char('{'), InnerEvent::Begin { sd }))
+            Ok((at.offset_char('{'), InnerEvent::Begin { sd, offset: at.0 }))
         } else if props {
             // prop/value sucks to parse, the two valid options here are:
             // - type? node-space* value
@@ -792,6 +807,7 @@ impl<'text> Grammar<'text> {
             // it's used
             if let (at, Some(ty)) = self.type_hint(at)? {
                 let at = self.node_space(at, false)?;
+                let start = at.0;
                 let (at, value) = self.value(at)?;
                 Ok((
                     at,
@@ -800,10 +816,13 @@ impl<'text> Grammar<'text> {
                         ty: Some(ty),
                         key: None,
                         value,
+                        start,
                     },
                 ))
             } else {
-                // this is a different at binding than type_hint, but it's the same value
+                // this is a different at binding than type_hint, but it's the same value;
+                // it is where both a property's key and an untyped argument begin
+                let start = at.0;
                 let (at, value) = self.value(at)?;
                 // try for a property
                 let value = match value {
@@ -821,6 +840,7 @@ impl<'text> Grammar<'text> {
                                     ty,
                                     key: Some(key),
                                     value: real,
+                                    start,
                                 },
                             ));
                         }
@@ -836,6 +856,7 @@ impl<'text> Grammar<'text> {
                         ty: None,
                         key: None,
                         value,
+                        start,
                     },
                 ))
             }
@@ -843,11 +864,6 @@ impl<'text> Grammar<'text> {
             Err(Error::ExpectedValue(at.0))
         }
     }
-}
-
-/// Actual number parsing implementation based on the streaming combinators
-fn parse_number(text: &str) -> Option<NumberInner> {
-    Grammar(text).all_number(Pos(0))
 }
 
 /// A streaming parser, is an [`Iterator`] of [`Event`]
@@ -907,7 +923,7 @@ impl<'text> Parser<'text> {
                     .ok_or(Error::Overflow(self.cursor.0))?;
                 ParserState::NextNode
             }
-            InnerEvent::End => {
+            InnerEvent::End { .. } => {
                 self.nest = self
                     .nest
                     .checked_sub(1)
@@ -940,14 +956,14 @@ impl<'text> Parser<'text> {
                                 depth =
                                     depth.checked_add(1).ok_or(Error::Overflow(self.cursor.0))?;
                             }
-                            InnerEvent::End => match depth.checked_sub(1) {
+                            end @ InnerEvent::End { .. } => match depth.checked_sub(1) {
                                 Some(next) => {
                                     depth = next;
                                     if depth == 0 {
                                         break None;
                                     }
                                 }
-                                None => break Some(InnerEvent::End),
+                                None => break Some(end),
                             },
                             InnerEvent::Done => break Some(InnerEvent::Done),
                             InnerEvent::Node { .. } | InnerEvent::PropValue { .. } => {}
@@ -955,7 +971,7 @@ impl<'text> Parser<'text> {
                     };
                     continue;
                 }
-                InnerEvent::Begin { sd: true } => {
+                InnerEvent::Begin { sd: true, .. } => {
                     let mut depth = 0_usize;
                     loop {
                         match self.next_event()? {
@@ -963,7 +979,7 @@ impl<'text> Parser<'text> {
                                 depth =
                                     depth.checked_add(1).ok_or(Error::Overflow(self.cursor.0))?;
                             }
-                            InnerEvent::End => {
+                            InnerEvent::End { .. } => {
                                 if let Some(next) = depth.checked_sub(1) {
                                     depth = next;
                                 } else {
@@ -972,7 +988,7 @@ impl<'text> Parser<'text> {
                             }
                             InnerEvent::Node { .. } | InnerEvent::PropValue { .. } => {}
                             // Unreachable inside a block, but ending here beats looping on Done forever.
-                            InnerEvent::Done => return Err(Error::UnexpectedEof),
+                            InnerEvent::Done => return Err(self.grammar.eof()),
                         }
                     }
                     continue;
@@ -981,9 +997,10 @@ impl<'text> Parser<'text> {
                     sd: false,
                     ty,
                     name,
+                    start,
                 } => {
                     self.begin_valid = true;
-                    Event::Node { ty, name }
+                    Event::Node { ty, name, start }
                 }
                 InnerEvent::PropValue { sd: true, .. } => continue,
                 InnerEvent::PropValue {
@@ -991,17 +1008,23 @@ impl<'text> Parser<'text> {
                     ty,
                     key,
                     value,
-                } => Event::Entry { ty, key, value },
-                InnerEvent::Begin { sd: false } => {
+                    start,
+                } => Event::Entry {
+                    ty,
+                    key,
+                    value,
+                    start,
+                },
+                InnerEvent::Begin { sd: false, offset } => {
                     if self.begin_valid {
-                        Event::Begin
+                        Event::Begin { offset }
                     } else {
                         return Err(Error::MultipleChildren(start_cursor.0));
                     }
                 }
-                InnerEvent::End => {
+                InnerEvent::End { offset } => {
                     self.begin_valid = false;
-                    Event::End
+                    Event::End { offset }
                 }
                 InnerEvent::Done => return Ok(None),
             };

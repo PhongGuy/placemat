@@ -42,6 +42,10 @@ inherits = "dev"
 opt-level = 3
 debug = 0
 
+# Test binaries carry no debug info: it is most of a target dir's size.
+[profile.test]
+debug = false
+
 [profile.release]
 strip = true
 lto = "thin"

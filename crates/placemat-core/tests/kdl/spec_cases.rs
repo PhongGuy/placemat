@@ -82,3 +82,13 @@ fn entries_may_not_follow_a_child_block() {
     refused("/-n {a} /-x");
     refused("n {a} /-x");
 }
+
+#[test]
+fn a_line_continuation_may_end_on_crlf() {
+    // `escline := '\\' ws* (single-line-comment | newline | eof)`, and CRLF is one newline.
+    for text in ["n \\\r\n  k=1", "n \\ // note\r\n  k=1", "n \\\r  k=1"] {
+        let nodes = parse(text, &ReadLimits::default()).unwrap_or_else(|e| panic!("{text:?}: {e}"));
+        assert_eq!(nodes.len(), 1, "{text:?}");
+        assert_eq!(nodes[0].entries.len(), 1, "{text:?}");
+    }
+}

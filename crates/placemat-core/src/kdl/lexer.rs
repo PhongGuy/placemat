@@ -305,7 +305,7 @@ impl<'text> Grammar<'text> {
         loop {
             match self.top_char(at) {
                 Some(ch) if Self::banned(ch) => return Err(Error::BannedChar(ch, at.0)),
-                Some(ch) if Self::newline(ch) => return Ok(at.offset_char(ch)),
+                Some(ch) if Self::newline(ch) => return Ok(self.past_newline(at, ch)),
                 None => return Ok(at),
                 Some(ch) => at = at.offset_char(ch),
             }
@@ -335,6 +335,15 @@ impl<'text> Grammar<'text> {
             }
         }
     }
+    /// Steps past the newline `ch` at `at`, taking CRLF as the one newline it is.
+    fn past_newline(&self, at: Pos, ch: char) -> Pos {
+        let at = at.offset_char(ch);
+        if ch == '\r' && self.top_char(at) == Some('\n') {
+            at.offset_char('\n')
+        } else {
+            at
+        }
+    }
     // `escline` after `\`
     // = `ws* (single-line-comment | newline | eof)`
     fn escline(&self, mut at: Pos) -> PResult<Pos> {
@@ -355,7 +364,7 @@ impl<'text> Grammar<'text> {
             Some('/') if self.top_char(at.offset_char('/')) == Some('/') => {
                 self.single_line_comment(at.offset_str("//"))
             }
-            Some(ch) if Self::newline(ch) => Ok(at.offset_char(ch)),
+            Some(ch) if Self::newline(ch) => Ok(self.past_newline(at, ch)),
             None => Ok(at),
             _ => Err(Error::ExpectedComment(at.0)),
         }

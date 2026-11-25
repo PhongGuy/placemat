@@ -97,6 +97,11 @@ impl Error {
 
 type PResult<T> = Result<T, Error>;
 
+/// Whether `ch` is one of KDL's newline characters (CRLF is the pair `\r`, `\n`).
+pub(crate) fn is_newline(ch: char) -> bool {
+    Grammar::newline(ch)
+}
+
 /// a parsing event
 #[derive(Debug, PartialEq)]
 pub(crate) enum Event<'text> {

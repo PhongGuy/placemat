@@ -2,9 +2,10 @@
 
 use super::{Built, build, checked, guarded, hachure_gap};
 use crate::board::{
-    Board, Boxed, Colour, Element, ElementId, Fill, FillStyle, Kind, Path, Point, Seed, Size, ZKey,
+    Anchor, Arrow, ArrowEnd, Board, Boxed, Colour, Element, ElementId, Fill, FillStyle, Head, Kind,
+    Path, Point, Seed, Size, Text, ZKey,
 };
-use crate::scene::{FixedAdvance, Geometry, Op, OpSet, SetKind};
+use crate::scene::{FixedAdvance, Geometry, Op, OpSet, Rect, SetKind};
 
 const M: i32 = 1 << 24;
 /// Ops one element may hold at the edge of every range, outline included.
@@ -219,4 +220,156 @@ fn a_panic_in_generation_falls_back_to_the_plain_box() {
     assert!(matches!(g.rough.as_slice(), [s] if s.ops == PLAIN), "{g:?}");
     let good = built(&el(7, Kind::Rect(boxed((0, 0), (10, 5), None)))).geometry;
     assert_eq!(guarded(|| good.clone(), 10.0, 5.0), good);
+}
+
+fn text(at: (i32, i32), content: &str, size: u16) -> Kind {
+    let mut t = Text::new(Point::new(at.0, at.1), content.to_owned());
+    t.font.size = size;
+    Kind::Text(t)
+}
+
+fn bound(target: &str, x: u16, y: u16) -> ArrowEnd {
+    ArrowEnd::Bound {
+        target: ElementId::new(target).unwrap(),
+        anchor: Anchor::new(x, y),
+    }
+}
+
+fn straight(from: ArrowEnd, to: ArrowEnd) -> Element {
+    let mut e = el(7, Kind::Arrow(Arrow::new(from, to)));
+    e.stroke.roughness = 0;
+    e
+}
+
+fn shaft(dx: f32, dy: f32) -> Vec<OpSet> {
+    vec![OpSet {
+        kind: SetKind::Stroke,
+        ops: vec![Op::Move(0.0, 0.0), Op::Line(dx, dy)],
+    }]
+}
+
+fn named(id: &str, kind: Kind) -> Element {
+    Element::new(
+        ElementId::new(id).unwrap(),
+        Seed::new(1).unwrap(),
+        ZKey::new("a1").unwrap(),
+        kind,
+    )
+}
+
+#[test]
+fn a_text_is_its_measured_block_with_no_ops() {
+    let b = built(&el(7, text((10, 20), "abcd\nef", 200)));
+    assert_eq!(b.origin, (10.0, 20.0));
+    assert_eq!(b.bounds, Rect::new(10.0, 20.0, 50.0, 70.0));
+    let label = b.geometry.label.clone().unwrap();
+    assert_eq!(label.lines, ["abcd", "ef"]);
+    assert_eq!((label.world_size, label.at), (20.0, (0.0, 0.0)));
+    assert!(
+        b.geometry.rough.is_empty() && b.geometry.outline.is_empty(),
+        "{:?}",
+        b.geometry
+    );
+    let zero = built(&el(7, text((10, 20), "abcd", 0)));
+    assert_eq!(zero.bounds, Rect::new(10.0, 20.0, 10.0, 20.0));
+}
+
+#[test]
+fn a_box_label_is_centred_and_an_empty_one_is_none() {
+    let mut body = boxed((0, 0), (200, 100), None);
+    body.label = Some("ab".to_owned());
+    let label = built(&el(7, Kind::Rect(body.clone())))
+        .geometry
+        .label
+        .unwrap();
+    assert_eq!((label.world_size, label.at), (20.0, (90.0, 37.5)));
+    body.label = Some(String::new());
+    assert_eq!(built(&el(7, Kind::Rect(body))).geometry.label, None);
+}
+
+#[test]
+fn bound_ends_sit_on_their_targets_at_the_anchor() {
+    let mut board = Board::new();
+    board
+        .insert(named("a", Kind::Rect(boxed((0, 0), (200, 100), None))))
+        .unwrap();
+    board
+        .insert(named("b", Kind::Rect(boxed((400, 0), (200, 100), None))))
+        .unwrap();
+    board
+        .insert(named("t", text((1000, 0), "abcd", 200)))
+        .unwrap();
+    let ab = build(
+        &straight(bound("a", 10_000, 5_000), bound("b", 0, 5_000)),
+        &board,
+        &STUB,
+    );
+    assert_eq!(
+        (ab.origin, ab.geometry.outline),
+        ((200.0, 50.0), shaft(200.0, 0.0))
+    );
+    // The text block spans 1000..1040 by 0..25.
+    let at = build(
+        &straight(bound("a", 0, 0), bound("t", 5_000, 10_000)),
+        &board,
+        &STUB,
+    );
+    assert_eq!(
+        (at.origin, at.geometry.outline),
+        ((0.0, 0.0), shaft(1020.0, 25.0))
+    );
+}
+
+#[test]
+fn a_missing_target_resolves_to_the_board_origin() {
+    let e = straight(
+        ArrowEnd::Free(Point::new(100, 100)),
+        bound("gone", 5_000, 5_000),
+    );
+    let b = build(&e, &Board::new(), &STUB);
+    assert_eq!(
+        (b.origin, b.geometry.outline),
+        ((100.0, 100.0), shaft(-100.0, -100.0))
+    );
+}
+
+#[test]
+fn each_head_adds_one_set_and_a_zero_length_arrow_is_a_dot() {
+    for head in [Head::Arrow, Head::Triangle, Head::Bar, Head::Dot] {
+        let mut a = Arrow::new(
+            ArrowEnd::Free(Point::new(0, 0)),
+            ArrowEnd::Free(Point::new(300, 0)),
+        );
+        (a.heads.start, a.heads.end) = (Head::None, head);
+        assert_eq!(
+            built(&el(7, Kind::Arrow(a.clone()))).geometry.rough.len(),
+            2,
+            "{head:?}"
+        );
+        a.heads.start = head;
+        assert_eq!(
+            built(&el(7, Kind::Arrow(a))).geometry.rough.len(),
+            3,
+            "{head:?}"
+        );
+    }
+    let point = ArrowEnd::Free(Point::new(5, 5));
+    let g = built(&el(7, Kind::Arrow(Arrow::new(point.clone(), point)))).geometry;
+    assert!(is_dot(&g.rough), "{g:?}");
+}
+
+#[test]
+fn an_arrow_label_is_centred_on_the_shaft() {
+    let mut a = Arrow::new(
+        ArrowEnd::Free(Point::new(0, 0)),
+        ArrowEnd::Free(Point::new(300, 0)),
+    );
+    a.label = Some("ab".to_owned());
+    let b = built(&el(7, Kind::Arrow(a)));
+    assert_eq!(b.geometry.label.unwrap().at, (140.0, -12.5));
+    assert!(
+        b.bounds.y0 <= -12.5 && b.bounds.y1 >= 12.5,
+        "{:?}",
+        b.bounds
+    );
 }

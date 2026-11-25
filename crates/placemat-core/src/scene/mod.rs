@@ -8,6 +8,7 @@
     clippy::print_stderr
 )]
 
+mod label;
 mod rough;
 
 /// Measures text for layout, so the core stays free of any font engine.

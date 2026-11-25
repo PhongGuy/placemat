@@ -2,5 +2,6 @@
 
 #![deny(missing_docs)]
 
+pub mod board;
 pub mod kdl;
 pub mod update;

@@ -1,0 +1,19 @@
+placemat-board version=0
+
+rect "a" {
+    at 0 0
+    seed 1
+    size 1 1
+    fill none
+    stroke "#000000" width=1 roughness=0 dash=solid
+    z "a0"
+}
+
+rect "b" {
+    at 0 0
+    seed 2
+    size 1 1
+    fill none
+    stroke "#000000" width=1 roughness=0 dash=solid
+    z "zz"
+}

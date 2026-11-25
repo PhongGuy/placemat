@@ -1,0 +1,11 @@
+placemat-board version=0
+
+diamond "d1Mn5pQr" {
+    at -10 0
+    seed 0
+    size 0 0
+    fill "#ffec99ff" style=solid
+    stroke "#868e96" width=0.5 roughness=10 dash=dotted
+    label ""
+    z "a5"
+}

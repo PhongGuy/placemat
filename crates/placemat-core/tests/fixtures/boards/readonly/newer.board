@@ -1,0 +1,15 @@
+placemat-board version=1 shiny=#true
+
+rect "a" {
+    at 0 0
+    seed 1
+    size 1 1
+    fill none
+    stroke "#000000" width=1 roughness=0 dash=solid
+    glow 3
+    z "a1"
+}
+
+hologram "h" {
+    depth 9
+}

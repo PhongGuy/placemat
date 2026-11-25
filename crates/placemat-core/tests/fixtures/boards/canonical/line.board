@@ -1,0 +1,9 @@
+placemat-board version=0
+
+line "e5Gp0vXa" {
+    at 580 220
+    seed 2034019962
+    points 0 0 0 100 -0.5 1.5
+    stroke "#868e96" width=1 roughness=1 dash=dashed
+    z "a7"
+}

@@ -1,0 +1,31 @@
+placemat-board version=0 future=1 "pos"
+
+widget "a" {
+    x 1
+}
+
+zeta "b" size=2
+
+rect "c" hint=1 {
+    at 0 0
+    seed 3
+    size 1 1 "extra"
+    fill none
+    stroke "#000000" width=1 roughness=0 dash=solid glow=#true
+    future-line 1 {
+        nested #true
+    }
+    z "a1"
+}
+
+rect "d" {
+    at 0 0
+    seed 4
+    size 1 1
+    fill none
+    stroke "#000000" width=1 roughness=0 dash=solid
+    later "x"
+    z "a2"
+}
+
+loose 1

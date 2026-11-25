@@ -12,9 +12,10 @@ workspace = true
 
 [dependencies]
 base64.workspace = true
+fastrand.workspace = true
 minisign-verify.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-fastrand.workspace = true
 kdl.workspace = true
+tempfile.workspace = true

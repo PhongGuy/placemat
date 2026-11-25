@@ -10,6 +10,7 @@ mod boardgen;
 mod edit;
 mod fixtures;
 mod load;
+mod merge_lab;
 mod model;
 mod order;
 mod repair;

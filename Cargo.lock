@@ -5183,6 +5183,7 @@ dependencies = [
  "fastrand",
  "kdl",
  "minisign-verify",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

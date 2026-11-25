@@ -3,4 +3,6 @@
 // #[test] functions, not the helpers they call.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod common;
+mod compliance;
 mod reader;

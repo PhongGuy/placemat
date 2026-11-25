@@ -5,6 +5,7 @@
 
 mod common;
 mod compliance;
+mod differential;
 mod reader;
 mod robustness;
 mod spec_cases;

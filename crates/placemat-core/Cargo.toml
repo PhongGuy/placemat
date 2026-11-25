@@ -16,4 +16,5 @@ minisign-verify.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+fastrand.workspace = true
 kdl.workspace = true

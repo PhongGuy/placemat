@@ -5180,6 +5180,7 @@ name = "placemat-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "fastrand",
  "kdl",
  "minisign-verify",
  "thiserror 2.0.21",

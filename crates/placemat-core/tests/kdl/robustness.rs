@@ -136,7 +136,8 @@ fn child_parses_ten_thousand_mutations() {
     }
 }
 
-// A panic or abort fails the child; anything it writes to stderr fails the parent.
+// A panic or abort fails the child; anything it writes to stderr fails the parent. A filter
+// matching no test also exits 0, so the child must report exactly one test passed.
 #[test]
 fn mutations_neither_panic_abort_nor_print() {
     let out = std::process::Command::new(std::env::current_exe().unwrap())
@@ -158,5 +159,10 @@ fn mutations_neither_panic_abort_nor_print() {
         out.stderr.is_empty(),
         "the reader wrote to stderr: {}",
         String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("test result: ok. 1 passed;"),
+        "the child ran no mutation test: {stdout}"
     );
 }

@@ -1,7 +1,6 @@
 //! Per-element hand-drawn geometry: roughr's output mapped into Placemat's op type, local to
 //! the element's origin, with the hachure gap capped and a plain box standing in for any
 //! generation that panics or produces a non-finite value.
-#![cfg_attr(not(test), expect(dead_code, reason = "used by Scene in Task 4"))]
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -16,7 +15,7 @@ use crate::board::{
 };
 
 /// An element's geometry with the world origin its ops are local to and its world bounds.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Built {
     pub(crate) origin: (f64, f64),
     pub(crate) bounds: Rect,

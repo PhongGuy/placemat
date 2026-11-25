@@ -1,6 +1,5 @@
 //! Text layout for free text and box and arrow labels: lines capped in number and length, and
 //! the block measured through the injected [`TextMeasure`], sanitised.
-#![cfg_attr(not(test), expect(dead_code, reason = "used by Scene in Task 4"))]
 
 use super::TextMeasure;
 

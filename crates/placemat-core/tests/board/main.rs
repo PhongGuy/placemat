@@ -12,6 +12,7 @@ mod fixtures;
 mod load;
 mod merge_lab;
 mod model;
+mod open;
 mod order;
 mod repair;
 mod unknown;

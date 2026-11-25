@@ -2,7 +2,8 @@
 
 use placemat_core::board::{
     Align, Anchor, Arrow, ArrowEnd, Board, Boxed, Colour, Dash, Element, ElementId, Fill,
-    FillStyle, FontFamily, Head, Kind, LimitReached, Path, Point, Seed, Size, Text, ZKey,
+    FillStyle, FontFamily, Head, Kind, LIMITS, LimitReached, Path, Point, Seed, Size, Text, ZKey,
+    load,
 };
 
 pub fn id(s: &str) -> ElementId {
@@ -225,4 +226,43 @@ pub fn fixture(rel: &str) -> String {
         .join("tests/fixtures/boards")
         .join(rel);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn widest(e: &mut Element) {
+    e.stroke.colour = Colour::rgba(0xff, 0xff, 0xff, 0xff);
+    (e.stroke.width, e.stroke.roughness, e.stroke.dash) = (999, 99, Dash::Dashed);
+}
+
+/// A board filled to every limit: the unknown-bytes, point, element and string budgets.
+pub fn limits_board() -> Board {
+    let blob = "a".repeat(LIMITS.unknown_bytes_total - 64);
+    let start = format!("placemat-board version=0\n\nwidget \"w\" blob=\"{blob}\"\n");
+    let mut b = load(start.as_bytes()).unwrap().board;
+    let wid = |i: usize| id(&format!("{i:0>32}"));
+    let zmax = z(&"z".repeat(64));
+    let t = 167_772_159;
+    let pens = LIMITS.points_total / LIMITS.points_per_element;
+    for i in 0..pens {
+        let path = Path::new(
+            Point::new(-(1 << 24), -(1 << 24)),
+            vec![Point::new(-t, -t); LIMITS.points_per_element],
+        );
+        let mut e = Element::new(wid(i), seed(Seed::MAX), zmax.clone(), Kind::Freedraw(path));
+        widest(&mut e);
+        b.insert(e).unwrap();
+    }
+    let per_label = LIMITS.string_bytes_total / (LIMITS.elements - pens);
+    for i in pens..LIMITS.elements {
+        let end = |n: usize| ArrowEnd::Bound {
+            target: wid(n),
+            anchor: Anchor::new(1234, 5678),
+        };
+        let mut a = Arrow::new(end(i % pens), end((i + 1) % pens));
+        (a.heads.start, a.heads.end) = (Head::Triangle, Head::Triangle);
+        a.label = Some("a".repeat(per_label));
+        let mut e = Element::new(wid(i), seed(Seed::MAX), zmax.clone(), Kind::Arrow(a));
+        widest(&mut e);
+        b.insert(e).unwrap();
+    }
+    b
 }

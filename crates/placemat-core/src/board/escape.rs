@@ -46,9 +46,45 @@ pub(crate) fn escaped_len(s: &str) -> usize {
         .sum()
 }
 
+/// Appends `s` to `out` in double quotes, escaped by [`escape`].
+pub(crate) fn quote_into(s: &str, out: &mut String) {
+    out.push('"');
+    for c in s.chars() {
+        match escape(c) {
+            Some(Escape::Short(e)) => {
+                out.push('\\');
+                out.push(e);
+            }
+            Some(Escape::Unicode(cp)) => out.push_str(&format!("\\u{{{cp:x}}}")),
+            None => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
 #[cfg(test)]
 mod tests {
-    use super::escaped_len;
+    use super::{escaped_len, quote_into};
+
+    #[test]
+    fn quoting_writes_exactly_the_escaped_length() {
+        for s in [
+            "a",
+            "é",
+            "\"",
+            "\n",
+            "\u{0}",
+            "\u{1f}",
+            "\u{9f}",
+            "\u{202e}",
+            "\u{feff}",
+            "\u{10ffff}",
+        ] {
+            let mut out = String::new();
+            quote_into(s, &mut out);
+            assert_eq!(out.len(), escaped_len(s) + 2, "{s:?} as {out}");
+        }
+    }
 
     #[test]
     fn escaped_lengths_match_the_written_forms() {

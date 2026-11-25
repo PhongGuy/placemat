@@ -6,6 +6,7 @@
 mod escape;
 mod model;
 mod rng;
+mod write;
 mod zkey;
 
 use std::collections::BTreeMap;
@@ -15,6 +16,7 @@ pub use model::{
     FontFamily, Head, Heads, Kind, Path, Point, Seed, Size, Stroke, Text,
 };
 pub use rng::Rng;
+pub use write::{WriteError, write};
 pub use zkey::ZKey;
 
 /// The board format version this build reads and writes.

@@ -2,10 +2,12 @@
 //! model write the same file and a merge sees only real edits.
 
 use super::escape::quote_into;
+use super::model::Unknown;
 use super::{
     Align, ArrowEnd, Board, Colour, Dash, Element, Fill, FillStyle, FontFamily, Head, Kind, LIMITS,
     Point, Stroke, VERSION, usage,
 };
+use crate::kdl::{Entry, Node, Value};
 
 /// Why a board was not written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -36,7 +38,9 @@ const TENTHS: u32 = 1;
 /// Anchors are fractions in units of 1e-4.
 const ANCHOR: u32 = 4;
 
-/// The board as canonical KDL: the header, then every element in id order, each after a blank line.
+/// The board as canonical KDL: the header, then every element in id order, each after a blank
+/// line. Keyed unknown nodes interleave with the elements by key, an element first on a tie, and
+/// unkeyed ones follow in source order.
 pub fn write(board: &Board) -> Result<String, WriteError> {
     if board.version() > VERSION {
         return Err(WriteError::ReadOnly {
@@ -47,12 +51,135 @@ pub fn write(board: &Board) -> Result<String, WriteError> {
     let mut out = String::new();
     out.push_str("placemat-board version=");
     out.push_str(&VERSION.to_string());
+    for text in &board.header {
+        unknown_entry(text, &mut out);
+    }
     out.push('\n');
+    let mut keyed = board.keyed.iter().peekable();
     for e in board.elements() {
+        while let Some((_, texts)) = keyed.next_if(|(key, _)| key.as_str() < e.id.as_str()) {
+            texts.iter().for_each(|t| unknown_node(t, &mut out));
+        }
         out.push('\n');
         element(e, &mut out);
     }
+    for text in keyed.flat_map(|(_, texts)| texts).chain(&board.unkeyed) {
+        unknown_node(text, &mut out);
+    }
     check_size(out, LIMITS.hard_bytes)
+}
+
+/// The bytes [`write`] emits for unknown data held by the board itself, outside any element.
+pub(crate) fn board_unknown_written(
+    header: &[String],
+    keyed: &std::collections::BTreeMap<String, Vec<String>>,
+    unkeyed: &[String],
+) -> usize {
+    let mut out = String::new();
+    header.iter().for_each(|t| unknown_entry(t, &mut out));
+    keyed
+        .values()
+        .flatten()
+        .chain(unkeyed)
+        .for_each(|t| unknown_node(t, &mut out));
+    out.len()
+}
+
+/// The bytes [`write`] emits for the element's unknown data, counted by writing it.
+pub(crate) fn unknown_written(e: &Element) -> usize {
+    if e.unknown.is_empty() {
+        return 0;
+    }
+    element(e, &mut String::new())
+}
+
+/// An unknown entry on a known line or the header, after a single space.
+fn unknown_entry(text: &str, out: &mut String) {
+    out.push(' ');
+    out.push_str(text);
+}
+
+/// An unknown top-level node after its blank line.
+fn unknown_node(text: &str, out: &mut String) {
+    out.push('\n');
+    out.push_str(text);
+    out.push('\n');
+}
+
+/// The node in unknown normal form: single spaces between entries, children four spaces deeper
+/// per block, no trailing newline.
+pub(crate) fn node_text(node: &Node) -> String {
+    let mut out = String::new();
+    node_into(node, "", &mut out);
+    out
+}
+
+fn node_into(node: &Node, indent: &str, out: &mut String) {
+    out.push_str(indent);
+    if let Some(ty) = &node.ty {
+        annotation_into(ty, out);
+    }
+    name_into(&node.name, out);
+    for entry in &node.entries {
+        out.push(' ');
+        entry_into(entry, out);
+    }
+    if let Some(children) = &node.children {
+        let inner = format!("{indent}    ");
+        out.push_str(" {\n");
+        for child in children {
+            node_into(child, &inner, out);
+            out.push('\n');
+        }
+        out.push_str(indent);
+        out.push('}');
+    }
+}
+
+/// The entry in unknown normal form: strings quoted, numbers as their source text.
+pub(crate) fn entry_text(entry: &Entry) -> String {
+    let mut out = String::new();
+    entry_into(entry, &mut out);
+    out
+}
+
+fn entry_into(entry: &Entry, out: &mut String) {
+    if let Some(key) = &entry.key {
+        name_into(key, out);
+        out.push('=');
+    }
+    if let Some(ty) = &entry.ty {
+        annotation_into(ty, out);
+    }
+    match &entry.value {
+        Value::String(s) => quote_into(s, out),
+        Value::Number(n) => out.push_str(n),
+        Value::Bool(true) => out.push_str("#true"),
+        Value::Bool(false) => out.push_str("#false"),
+        Value::Null => out.push_str("#null"),
+    }
+}
+
+fn annotation_into(ty: &str, out: &mut String) {
+    out.push('(');
+    name_into(ty, out);
+    out.push(')');
+}
+
+/// A name, key or annotation: bare when it is a plain identifier that cannot read as a
+/// keyword, quoted otherwise.
+fn name_into(name: &str, out: &mut String) {
+    let mut bytes = name.bytes();
+    let plain = bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        && !matches!(name, "true" | "false" | "null" | "inf" | "nan");
+    if plain {
+        out.push_str(name);
+    } else {
+        quote_into(name, out);
+    }
 }
 
 /// Recounts the board against [`LIMITS`] from its elements rather than trusting the running
@@ -63,7 +190,9 @@ fn over_limit(board: &Board) -> Result<(), WriteError> {
         return fail("elements");
     }
     let (mut points, mut strings) = (0, 0);
+    let mut unknown = board_unknown_written(&board.header, &board.keyed, &board.unkeyed);
     for e in board.elements() {
+        unknown += unknown_written(e);
         let u = usage(e);
         if u.points > LIMITS.points_per_element {
             return fail("points_per_element");
@@ -80,6 +209,9 @@ fn over_limit(board: &Board) -> Result<(), WriteError> {
     if strings > LIMITS.string_bytes_total {
         return fail("string_bytes_total");
     }
+    if unknown > LIMITS.unknown_bytes_total {
+        return fail("unknown_bytes_total");
+    }
     Ok(())
 }
 
@@ -91,8 +223,9 @@ fn check_size(text: String, hard: usize) -> Result<String, WriteError> {
     Ok(text)
 }
 
-/// One element's block, its lines in the fixed per-kind order with `seed` second and `z` last.
-fn element(e: &Element, out: &mut String) {
+/// One element's block, its lines in the fixed per-kind order with `seed` second, unknown lines
+/// next to last and `z` last. Returns the bytes written for unknown data.
+fn element(e: &Element, out: &mut String) -> usize {
     let kind = match &e.kind {
         Kind::Rect(_) => "rect",
         Kind::Ellipse(_) => "ellipse",
@@ -105,8 +238,16 @@ fn element(e: &Element, out: &mut String) {
     out.push_str(kind);
     out.push(' ');
     quote_into(e.id.as_str(), out);
-    out.push_str(" {\n");
-    let mut line = Line { out };
+    let mut line = Line {
+        out,
+        unknown: &e.unknown,
+        name: "",
+        written: 0,
+    };
+    for text in &e.unknown.opener {
+        line.unknown_entry(text);
+    }
+    line.out.push_str(" {\n");
     match &e.kind {
         Kind::Rect(b) | Kind::Ellipse(b) | Kind::Diamond(b) => {
             line.point("at", b.at);
@@ -170,8 +311,12 @@ fn element(e: &Element, out: &mut String) {
             line.stroke(&e.stroke);
         }
     }
+    for text in &e.unknown.lines {
+        line.unknown_line(text);
+    }
     line.start("z").string(e.z.as_str()).end();
     line.out.push_str("}\n");
+    line.written
 }
 
 fn head(h: Head) -> &'static str {
@@ -184,21 +329,49 @@ fn head(h: Head) -> &'static str {
     }
 }
 
-/// Prints the child lines of one element block, each entry preceded by a single space.
+/// Prints the child lines of one element block, each entry preceded by a single space, closing
+/// each known line with its unknown entries and counting every unknown byte it writes.
 struct Line<'a> {
     out: &'a mut String,
+    unknown: &'a Unknown,
+    /// The open line's name.
+    name: &'static str,
+    /// Unknown bytes written so far.
+    written: usize,
 }
 
 impl Line<'_> {
     /// Opens a child line with its indentation and name.
-    fn start(&mut self, name: &str) -> &mut Self {
+    fn start(&mut self, name: &'static str) -> &mut Self {
         self.out.push_str("    ");
         self.out.push_str(name);
+        self.name = name;
         self
     }
 
     fn end(&mut self) {
+        let unknown = self.unknown;
+        for text in unknown.entries.get(self.name).into_iter().flatten() {
+            self.unknown_entry(text);
+        }
         self.out.push('\n');
+    }
+
+    fn unknown_entry(&mut self, text: &str) {
+        let before = self.out.len();
+        unknown_entry(text, self.out);
+        self.written += self.out.len() - before;
+    }
+
+    /// An unknown line, each of its own lines four spaces deeper than the element.
+    fn unknown_line(&mut self, text: &str) {
+        let before = self.out.len();
+        for part in text.split('\n') {
+            self.out.push_str("    ");
+            self.out.push_str(part);
+            self.out.push('\n');
+        }
+        self.written += self.out.len() - before;
     }
 
     fn bare(&mut self, s: &str) -> &mut Self {
@@ -233,7 +406,7 @@ impl Line<'_> {
         self
     }
 
-    fn point(&mut self, name: &str, p: Point) {
+    fn point(&mut self, name: &'static str, p: Point) {
         self.start(name).int(p.x).int(p.y).end();
     }
 
@@ -262,7 +435,7 @@ impl Line<'_> {
         }
     }
 
-    fn arrow_end(&mut self, name: &str, end: &ArrowEnd) {
+    fn arrow_end(&mut self, name: &'static str, end: &ArrowEnd) {
         match end {
             ArrowEnd::Bound { target, anchor } => {
                 self.start(name)
@@ -298,8 +471,9 @@ pub(crate) fn fixed(value: i64, digits: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{WriteError, check_size, fixed, write};
+    use super::{WriteError, check_size, entry_text, fixed, node_text, write};
     use crate::board::{Board, Boxed, Element, ElementId, Kind, LIMITS, Point, Seed, Size, ZKey};
+    use crate::kdl::{ReadLimits, parse};
 
     #[test]
     fn fixed_point_is_the_shortest_exact_decimal() {
@@ -341,5 +515,39 @@ mod tests {
             b.elements.insert(id, e);
         }
         assert_eq!(write(&b), Err(WriteError::OverLimit { limit: "elements" }));
+    }
+
+    #[test]
+    fn unknown_nodes_take_the_normal_form() {
+        let text = r#"(t)n  0x1F  1_000 #true #null k="a\nb" "two words"=(u)2 "inf"=x {
+  child 1; other
+  deep { x }
+}"#;
+        let nodes = parse(text, &ReadLimits::default()).unwrap();
+        let want = r#"(t)n 0x1F 1_000 #true #null k="a\nb" "two words"=(u)2 "inf"="x" {
+    child 1
+    other
+    deep {
+        x
+    }
+}"#;
+        assert_eq!(node_text(&nodes[0]), want);
+        assert_eq!(entry_text(&nodes[0].entries[4]), r#"k="a\nb""#);
+    }
+
+    #[test]
+    fn type_annotations_are_bare_or_quoted_like_names() {
+        let nodes = parse(
+            r#"("a b")n ("x")1 k=("t t")"v" ("inf")2"#,
+            &ReadLimits::default(),
+        )
+        .unwrap();
+        let want = r#"("a b")n (x)1 k=("t t")"v" ("inf")2"#;
+        assert_eq!(node_text(&nodes[0]), want);
+        // The normal form must itself parse, to the same text.
+        assert_eq!(
+            node_text(&parse(want, &ReadLimits::default()).unwrap()[0]),
+            want
+        );
     }
 }

@@ -1,5 +1,6 @@
 //! The element model: ids, seeds, geometry, styles and the seven element kinds.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use super::ZKey;
@@ -461,6 +462,26 @@ pub struct Element {
     pub z: ZKey,
     /// Kind and its fields.
     pub kind: Kind,
+    /// Data this build does not understand, kept so a save writes it back.
+    pub(crate) unknown: Unknown,
+}
+
+/// An element's unknown data in the normal form `write::node_text` and `write::entry_text` give,
+/// so loading and writing it again is byte-stable.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct Unknown {
+    /// Entries after the id on the element's block opener, in source order.
+    pub(crate) opener: Vec<String>,
+    /// Entries after a known line's own entries, by line name, in source order.
+    pub(crate) entries: BTreeMap<String, Vec<String>>,
+    /// Whole lines this build does not know, in source order.
+    pub(crate) lines: Vec<String>,
+}
+
+impl Unknown {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.opener.is_empty() && self.entries.is_empty() && self.lines.is_empty()
+    }
 }
 
 impl Element {
@@ -472,6 +493,7 @@ impl Element {
             stroke: Stroke::default(),
             z,
             kind,
+            unknown: Unknown::default(),
         }
     }
 }

@@ -92,6 +92,8 @@ pub(crate) struct Usage {
     pub(crate) points: usize,
     /// Label and content bytes after escaping.
     pub(crate) string_bytes: usize,
+    /// Unknown-data bytes as written.
+    pub(crate) unknown_bytes: usize,
 }
 
 /// The element's usage, or the limit it breaks on its own: a value outside its format, or
@@ -139,6 +141,7 @@ pub(crate) fn usage(e: &Element) -> Usage {
     Usage {
         points,
         string_bytes: string.map_or(0, escape::escaped_len),
+        unknown_bytes: write::unknown_written(e),
     }
 }
 
@@ -149,8 +152,17 @@ pub(crate) fn usage(e: &Element) -> Usage {
 pub struct Board {
     version: u32,
     pub(crate) elements: BTreeMap<ElementId, Element>,
+    /// Unknown header entries, in `write::entry_text` form and source order.
+    pub(crate) header: Vec<String>,
+    /// Unknown top-level nodes keyed by their first string argument, each in `write::node_text`
+    /// form, same-key nodes in source order.
+    pub(crate) keyed: BTreeMap<String, Vec<String>>,
+    /// Unknown top-level nodes without a key, in source order.
+    pub(crate) unkeyed: Vec<String>,
     points_total: usize,
     string_bytes_total: usize,
+    /// Unknown bytes as written, the board's own and its elements'.
+    unknown_bytes_total: usize,
 }
 
 impl Board {
@@ -187,9 +199,29 @@ impl Board {
         self.elements.values()
     }
 
-    /// Whether `id` is taken on this board.
+    /// Whether `id` is taken on this board, by an element or by an unknown node keyed by it.
     pub fn contains_id(&self, id: &str) -> bool {
-        ElementId::new(id).is_some_and(|id| self.elements.contains_key(&id))
+        self.keyed.contains_key(id)
+            || ElementId::new(id).is_some_and(|id| self.elements.contains_key(&id))
+    }
+
+    /// A board at `version` holding unknown data of its own, or `None` when that data alone
+    /// writes over [`LIMITS`]`.unknown_bytes_total`.
+    pub(crate) fn with_unknown(
+        version: u32,
+        header: Vec<String>,
+        keyed: BTreeMap<String, Vec<String>>,
+        unkeyed: Vec<String>,
+    ) -> Option<Self> {
+        let unknown_bytes_total = write::board_unknown_written(&header, &keyed, &unkeyed);
+        (unknown_bytes_total <= LIMITS.unknown_bytes_total).then(|| Self {
+            version,
+            header,
+            keyed,
+            unkeyed,
+            unknown_bytes_total,
+            ..Self::default()
+        })
     }
 
     /// Inserts the element, replacing any element with the same id. Refuses it, leaving the board
@@ -213,8 +245,13 @@ impl Board {
         if string_bytes_total > LIMITS.string_bytes_total {
             return Err(LimitReached::new("string_bytes_total"));
         }
+        let unknown_bytes_total = self.unknown_bytes_total - old.unknown_bytes + new.unknown_bytes;
+        if unknown_bytes_total > LIMITS.unknown_bytes_total {
+            return Err(LimitReached::new("unknown_bytes_total"));
+        }
         self.points_total = points_total;
         self.string_bytes_total = string_bytes_total;
+        self.unknown_bytes_total = unknown_bytes_total;
         self.elements.insert(e.id.clone(), e);
         Ok(())
     }
@@ -225,6 +262,7 @@ impl Board {
         let usage = usage(&e);
         self.points_total -= usage.points;
         self.string_bytes_total -= usage.string_bytes;
+        self.unknown_bytes_total -= usage.unknown_bytes;
         Some(e)
     }
 

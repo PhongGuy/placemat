@@ -1,14 +1,19 @@
 //! The loader: untrusted bytes pass the byte cap, strict UTF-8 and the bounded KDL reader, then
 //! the tree maps onto the model element by element, each refusal carrying its line and column.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use super::model::Unknown;
+use super::write::{entry_text, node_text};
 use super::{
     ANCHOR_MAX, Align, Anchor, Arrow, ArrowEnd, Board, Boxed, COORD_MAX, Colour, Dash, Element,
     ElementId, Fill, FillStyle, Font, FontFamily, Head, Heads, Kind, LIMITS, POINT_MAX, Path,
     Point, ROUGHNESS_MAX, Seed, Size, Stroke, TENTHS_MAX, Text, VERSION, ZKey,
 };
 use crate::kdl::{self, Entry, Node, ReadError, ReadErrorKind, ReadLimits, Value};
+
+/// Unknown entries found on an element's known lines, by line name, in normal form.
+type Extra = BTreeMap<String, Vec<String>>;
 
 /// A loaded board with what the load repaired and whether it may be saved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,18 +147,18 @@ pub fn load(bytes: &[u8]) -> Result<Loaded, LoadError> {
     let nodes = kdl::parse(text, &read_limits()).map_err(|e| read_error(text, e))?;
     let (header, body) = nodes.split_first().ok_or(LoadError::NotABoard)?;
     let version = version(header).ok_or(LoadError::NotABoard)?;
-    if let Some(extra) = header
+    let header = header
         .entries
         .iter()
-        .find(|e| e.key.as_deref() != Some("version"))
-    {
-        return Err(invalid(
-            text,
-            None,
-            bad(extra.start, "unknown header entry"),
-        ));
-    }
-    let mapped = map(text, body)?;
+        .filter(|e| e.key.as_deref() != Some("version"))
+        .map(entry_text)
+        .collect();
+    let (mapped, keyed, unkeyed) = map(text, body)?;
+    let board =
+        Board::with_unknown(version, header, keyed, unkeyed).ok_or(LoadError::OverLimit {
+            limit: "unknown_bytes_total",
+            id: None,
+        })?;
     let mut warnings: Vec<Warning> = mapped
         .iter()
         .filter(|m| m.seed_clamped)
@@ -169,7 +174,7 @@ pub fn load(bytes: &[u8]) -> Result<Loaded, LoadError> {
                 id: m.element.id.clone(),
             }),
     );
-    let board = assemble(text, version, mapped)?;
+    let board = assemble(text, board, mapped)?;
     if bytes.len() > LIMITS.team_bytes {
         warnings.push(Warning::OverTeamLimit { bytes: bytes.len() });
     }
@@ -265,14 +270,28 @@ struct Mapped {
     z_invalid: bool,
 }
 
+/// The top-level nodes after the header: elements, unknown nodes keyed by their first string
+/// argument, and unkeyed unknown nodes.
+type Mapping = (Vec<Mapped>, BTreeMap<String, Vec<String>>, Vec<String>);
+
 /// Maps every top-level node after the header in file order, stopping at the first element
-/// past the count limit so a huge file is not mapped in full first.
-fn map(text: &str, body: &[Node]) -> Result<Vec<Mapped>, LoadError> {
+/// past the count limit so a huge file is not mapped in full first. Unknown nodes are kept in
+/// normal form.
+fn map(text: &str, body: &[Node]) -> Result<Mapping, LoadError> {
     let mut mapped = Vec::new();
+    let (mut keyed, mut unkeyed) = (BTreeMap::<String, Vec<String>>::new(), Vec::new());
     let mut seen = BTreeSet::new();
     for node in body {
         let Some(lines) = lines_of(&node.name) else {
-            return Err(invalid(text, None, bad(node.start, "unknown node")));
+            match node.entries.first() {
+                Some(Entry {
+                    key: None,
+                    value: Value::String(key),
+                    ..
+                }) => keyed.entry(key.clone()).or_default().push(node_text(node)),
+                _ => unkeyed.push(node_text(node)),
+            }
+            continue;
         };
         if mapped.len() >= LIMITS.elements {
             return Err(LoadError::OverLimit {
@@ -287,20 +306,21 @@ fn map(text: &str, body: &[Node]) -> Result<Vec<Mapped>, LoadError> {
         let m = element(node, id.clone(), lines).map_err(|b| invalid(text, Some(id), b))?;
         mapped.push(m);
     }
-    Ok(mapped)
+    Ok((mapped, keyed, unkeyed))
 }
 
-/// Builds the board through [`Board::insert`], so its running totals match its elements and
-/// every total limit is checked once, naming the element that crossed it.
-fn assemble(text: &str, version: u32, mapped: Vec<Mapped>) -> Result<Board, LoadError> {
-    let mut board = Board {
-        version,
-        ..Board::new()
-    };
+/// Fills the board through [`Board::insert`], so its running totals match its elements and
+/// every total limit is checked once, naming the element that crossed it. Unknown bytes are a
+/// whole-board budget, so that refusal names no element.
+fn assemble(text: &str, mut board: Board, mapped: Vec<Mapped>) -> Result<Board, LoadError> {
     for m in mapped {
         let id = m.element.id.clone();
         board.insert(m.element).map_err(|r| match r.limit {
             "range" => invalid(text, Some(id.clone()), bad(m.start, "value out of range")),
+            "unknown_bytes_total" => LoadError::OverLimit {
+                limit: "unknown_bytes_total",
+                id: None,
+            },
             limit => LoadError::OverLimit {
                 limit,
                 id: Some(id.clone()),
@@ -336,53 +356,60 @@ fn element_id(node: &Node) -> Result<ElementId, Bad> {
 }
 
 /// One element node mapped onto the model, its lines found by name and each read in turn.
+/// Entries after the id, unknown lines and unknown entries on known lines are kept.
 fn element(node: &Node, id: ElementId, names: &'static [&'static str]) -> Result<Mapped, Bad> {
     if node.ty.is_some() {
         return Err(bad(node.start, "type annotation on an element"));
     }
-    if let Some(extra) = node.entries.get(1) {
-        return Err(bad(extra.start, "unexpected entry on an element"));
-    }
     let lines = Lines::find(node, names)?;
-    let (seed, seed_clamped) = seed(lines.need("seed")?)?;
-    let stroke = stroke(lines.need("stroke")?)?;
-    let (z, z_invalid) = z(lines.need("z")?)?;
-    let label = lines.get("label").map(label).transpose()?;
-    let boxed = || -> Result<Boxed, Bad> {
-        let mut b = Boxed::new(point(lines.need("at")?)?, size(lines.need("size")?)?);
-        b.fill = fill(lines.need("fill")?)?;
+    let x = &mut Extra::new();
+    let (seed, seed_clamped) = seed(lines.need("seed")?, x)?;
+    let stroke = stroke(lines.need("stroke")?, x)?;
+    let (z, z_invalid) = z(lines.need("z")?, x)?;
+    let label = lines.get("label").map(|l| label(l, x)).transpose()?;
+    let boxed = |x: &mut Extra| -> Result<Boxed, Bad> {
+        let mut b = Boxed::new(point(lines.need("at")?, x)?, size(lines.need("size")?, x)?);
+        b.fill = fill(lines.need("fill")?, x)?;
         b.label = label.clone();
         Ok(b)
     };
-    let path = || -> Result<Path, Bad> {
+    let path = |x: &mut Extra| -> Result<Path, Bad> {
         Ok(Path::new(
-            point(lines.need("at")?)?,
-            points(lines.need("points")?)?,
+            point(lines.need("at")?, x)?,
+            points(lines.need("points")?, x)?,
         ))
     };
     let kind = match node.name.as_str() {
-        "rect" => Kind::Rect(boxed()?),
-        "ellipse" => Kind::Ellipse(boxed()?),
-        "diamond" => Kind::Diamond(boxed()?),
-        "line" => Kind::Line(path()?),
-        "freedraw" => Kind::Freedraw(path()?),
+        "rect" => Kind::Rect(boxed(x)?),
+        "ellipse" => Kind::Ellipse(boxed(x)?),
+        "diamond" => Kind::Diamond(boxed(x)?),
+        "line" => Kind::Line(path(x)?),
+        "freedraw" => Kind::Freedraw(path(x)?),
         "arrow" => {
             let mut a = Arrow::new(
-                arrow_end(lines.need("from")?)?,
-                arrow_end(lines.need("to")?)?,
+                arrow_end(lines.need("from")?, x)?,
+                arrow_end(lines.need("to")?, x)?,
             );
-            a.heads = heads(lines.need("head")?)?;
+            a.heads = heads(lines.need("head")?, x)?;
             a.label = label;
             Kind::Arrow(a)
         }
         _ => {
-            let mut t = Text::new(point(lines.need("at")?)?, content(lines.need("content")?)?);
-            t.font = font(lines.need("font")?)?;
+            let mut t = Text::new(
+                point(lines.need("at")?, x)?,
+                content(lines.need("content")?, x)?,
+            );
+            t.font = font(lines.need("font")?, x)?;
             Kind::Text(t)
         }
     };
     let mut element = Element::new(id, seed, z, kind);
     element.stroke = stroke;
+    element.unknown = Unknown {
+        opener: node.entries.iter().skip(1).map(entry_text).collect(),
+        entries: std::mem::take(x),
+        lines: lines.unknown,
+    };
     Ok(Mapped {
         element,
         start: node.start,
@@ -391,22 +418,28 @@ fn element(node: &Node, id: ElementId, names: &'static [&'static str]) -> Result
     })
 }
 
-/// An element's lines by name; a name outside the kind's table or seen twice is refused.
+/// An element's lines by name, with the lines outside the kind's table kept in normal form; a
+/// known line seen twice is refused.
 struct Lines<'n> {
     element: &'n Node,
     names: &'static [&'static str],
     found: Vec<Option<&'n Node>>,
+    unknown: Vec<String>,
 }
 
 impl<'n> Lines<'n> {
     fn find(element: &'n Node, names: &'static [&'static str]) -> Result<Self, Bad> {
         let mut found = vec![None; names.len()];
+        let mut unknown = Vec::new();
         for line in element.children.iter().flatten() {
-            let slot = names
+            let Some(slot) = names
                 .iter()
                 .position(|n| *n == line.name)
                 .and_then(|i| found.get_mut(i))
-                .ok_or_else(|| bad(line.start, "unknown line"))?;
+            else {
+                unknown.push(node_text(line));
+                continue;
+            };
             if slot.replace(line).is_some() {
                 return Err(bad(line.start, format!("repeated `{}` line", line.name)));
             }
@@ -415,6 +448,7 @@ impl<'n> Lines<'n> {
             element,
             names,
             found,
+            unknown,
         })
     }
 
@@ -429,10 +463,15 @@ impl<'n> Lines<'n> {
     }
 }
 
-/// Splits a line into its positional arguments and the properties named by `keys`, in that
-/// order. Every known-line rule lives here: no annotation, no block, no unknown or repeated
-/// property, and no missing property.
-fn split<'n>(line: &'n Node, keys: &[&str]) -> Result<(Vec<&'n Entry>, Vec<&'n Entry>), Bad> {
+/// Splits a line into its first `max_args` positional arguments and the properties named by
+/// `keys`, in that order; later arguments and other properties go to `x` as unknown entries.
+/// Every known-line rule lives here: no annotation, no block, no repeated or missing property.
+fn split<'n>(
+    line: &'n Node,
+    keys: &[&str],
+    max_args: usize,
+    x: &mut Extra,
+) -> Result<(Vec<&'n Entry>, Vec<&'n Entry>), Bad> {
     if line.ty.is_some() {
         return Err(bad(line.start, "type annotation on a line"));
     }
@@ -441,21 +480,27 @@ fn split<'n>(line: &'n Node, keys: &[&str]) -> Result<(Vec<&'n Entry>, Vec<&'n E
     }
     let mut args = Vec::new();
     let mut props: Vec<Option<&Entry>> = vec![None; keys.len()];
+    let mut unknown = Vec::new();
     for entry in &line.entries {
+        let known_arg = entry.key.is_none() && args.len() < max_args;
+        let prop = entry.key.as_ref().and_then(|key| {
+            let slot = keys.iter().position(|k| k == key);
+            slot.and_then(|i| props.get_mut(i)).map(|slot| (key, slot))
+        });
+        if !known_arg && prop.is_none() {
+            unknown.push(entry_text(entry));
+            continue;
+        }
         if entry.ty.is_some() {
             return Err(bad(entry.start, "type annotation on a value"));
         }
-        let Some(key) = &entry.key else {
-            args.push(entry);
-            continue;
-        };
-        let slot = keys
-            .iter()
-            .position(|k| k == key)
-            .and_then(|i| props.get_mut(i))
-            .ok_or_else(|| bad(entry.start, format!("unknown property `{key}`")))?;
-        if slot.replace(entry).is_some() {
-            return Err(bad(entry.start, format!("repeated property `{key}`")));
+        match prop {
+            Some((key, slot)) => {
+                if slot.replace(entry).is_some() {
+                    return Err(bad(entry.start, format!("repeated property `{key}`")));
+                }
+            }
+            None => args.push(entry),
         }
     }
     let props = props
@@ -463,6 +508,9 @@ fn split<'n>(line: &'n Node, keys: &[&str]) -> Result<(Vec<&'n Entry>, Vec<&'n E
         .zip(keys)
         .map(|(p, k)| p.ok_or_else(|| bad(line.start, format!("missing property `{k}`"))))
         .collect::<Result<_, _>>()?;
+    if !unknown.is_empty() {
+        x.insert(line.name.clone(), unknown);
+    }
     Ok((args, props))
 }
 
@@ -470,11 +518,9 @@ fn split<'n>(line: &'n Node, keys: &[&str]) -> Result<(Vec<&'n Entry>, Vec<&'n E
 fn fixed_split<'n, const N: usize, const K: usize>(
     line: &'n Node,
     keys: [&str; K],
+    x: &mut Extra,
 ) -> Result<([&'n Entry; N], [&'n Entry; K]), Bad> {
-    let (args, props) = split(line, &keys)?;
-    if let Some(extra) = args.get(N) {
-        return Err(bad(extra.start, "unexpected value"));
-    }
+    let (args, props) = split(line, &keys, N, x)?;
     let args = args
         .try_into()
         .map_err(|_| bad(line.start, "missing value"))?;
@@ -482,6 +528,19 @@ fn fixed_split<'n, const N: usize, const K: usize>(
         .try_into()
         .map_err(|_| bad(line.start, "missing property"))?;
     Ok((args, props))
+}
+
+/// Refuses a key that belongs to another form of this line, such as `style` on `fill none`,
+/// which would otherwise be kept as unknown data.
+fn known_key_in_wrong_form(line: &Node, keys: &[&str]) -> Result<(), Bad> {
+    match line
+        .entries
+        .iter()
+        .find(|e| e.key.as_deref().is_some_and(|k| keys.contains(&k)))
+    {
+        Some(e) => Err(bad(e.start, "property not allowed in this form")),
+        None => Ok(()),
+    }
 }
 
 /// A number in `[+-]?[0-9]+(\.[0-9]+)?` with at most `digits` fraction digits, scaled by
@@ -561,27 +620,27 @@ fn word<T: Copy>(e: &Entry, table: &[(&str, T)]) -> Result<T, Bad> {
         .ok_or_else(|| bad(e.start, format!("unknown value `{s}`")))
 }
 
-fn point(line: &Node) -> Result<Point, Bad> {
-    let ([x, y], []) = fixed_split(line, [])?;
-    Ok(Point::new(coord(x)?, coord(y)?))
+fn point(line: &Node, x: &mut Extra) -> Result<Point, Bad> {
+    let ([px, py], []) = fixed_split(line, [], x)?;
+    Ok(Point::new(coord(px)?, coord(py)?))
 }
 
-fn size(line: &Node) -> Result<Size, Bad> {
-    let p = point(line)?;
+fn size(line: &Node, x: &mut Extra) -> Result<Size, Bad> {
+    let p = point(line, x)?;
     Ok(Size::new(p.x, p.y))
 }
 
 /// The seed and whether it was clamped: any integer fitting `u64` loads, values above
 /// [`Seed::MAX`] clamp to it.
-fn seed(line: &Node) -> Result<(Seed, bool), Bad> {
-    let ([n], []) = fixed_split(line, [])?;
+fn seed(line: &Node, x: &mut Extra) -> Result<(Seed, bool), Bad> {
+    let ([n], []) = fixed_split(line, [], x)?;
     let n: u64 = number(n, 0, 0, u64::MAX.into())?;
     let seed = Seed::clamped(u32::try_from(n).unwrap_or(u32::MAX));
     Ok((seed, u64::from(seed.get()) != n))
 }
 
-fn stroke(line: &Node) -> Result<Stroke, Bad> {
-    let ([c], [width, roughness, dash]) = fixed_split(line, ["width", "roughness", "dash"])?;
+fn stroke(line: &Node, x: &mut Extra) -> Result<Stroke, Bad> {
+    let ([c], [width, roughness, dash]) = fixed_split(line, ["width", "roughness", "dash"], x)?;
     let dashes = [
         ("solid", Dash::Solid),
         ("dashed", Dash::Dashed),
@@ -596,25 +655,25 @@ fn stroke(line: &Node) -> Result<Stroke, Bad> {
 }
 
 /// The z key and whether it was malformed; a malformed string becomes the empty key.
-fn z(line: &Node) -> Result<(ZKey, bool), Bad> {
-    let ([k], []) = fixed_split(line, [])?;
+fn z(line: &Node, x: &mut Extra) -> Result<(ZKey, bool), Bad> {
+    let ([k], []) = fixed_split(line, [], x)?;
     Ok(match ZKey::new(string(k)?) {
         Some(z) => (z, false),
         None => (ZKey::empty(), true),
     })
 }
 
-fn label(line: &Node) -> Result<String, Bad> {
-    content(line)
+fn label(line: &Node, x: &mut Extra) -> Result<String, Bad> {
+    content(line, x)
 }
 
-fn content(line: &Node) -> Result<String, Bad> {
-    let ([s], []) = fixed_split(line, [])?;
+fn content(line: &Node, x: &mut Extra) -> Result<String, Bad> {
+    let ([s], []) = fixed_split(line, [], x)?;
     Ok(string(s)?.to_owned())
 }
 
 /// `fill none`, or a colour with its style.
-fn fill(line: &Node) -> Result<Fill, Bad> {
+fn fill(line: &Node, x: &mut Extra) -> Result<Fill, Bad> {
     if let Some(Entry {
         key: None,
         value: Value::String(s),
@@ -622,10 +681,11 @@ fn fill(line: &Node) -> Result<Fill, Bad> {
     }) = line.entries.first()
         && s == "none"
     {
-        fixed_split::<1, 0>(line, [])?;
+        known_key_in_wrong_form(line, &["style"])?;
+        fixed_split::<1, 0>(line, [], x)?;
         return Ok(Fill::None);
     }
-    let ([c], [style]) = fixed_split(line, ["style"])?;
+    let ([c], [style]) = fixed_split(line, ["style"], x)?;
     let styles = [
         ("hachure", FillStyle::Hachure),
         ("cross-hatch", FillStyle::CrossHatch),
@@ -639,8 +699,8 @@ fn fill(line: &Node) -> Result<Fill, Bad> {
 }
 
 /// Path points: pairs of fixed-point tenths relative to the path's origin.
-fn points(line: &Node) -> Result<Vec<Point>, Bad> {
-    let (args, _) = split(line, &[])?;
+fn points(line: &Node, x: &mut Extra) -> Result<Vec<Point>, Bad> {
+    let (args, _) = split(line, &[], usize::MAX, x)?;
     let (pairs, []) = args.as_chunks::<2>() else {
         return Err(bad(line.start, "points come in pairs"));
     };
@@ -652,24 +712,25 @@ fn points(line: &Node) -> Result<Vec<Point>, Bad> {
 }
 
 /// A bound end (`"id" x=.. y=..`) when the first argument is a string, else a free point.
-fn arrow_end(line: &Node) -> Result<ArrowEnd, Bad> {
+fn arrow_end(line: &Node, x: &mut Extra) -> Result<ArrowEnd, Bad> {
     if !matches!(
         line.entries.first().map(|e| &e.value),
         Some(Value::String(_))
     ) {
-        return point(line).map(ArrowEnd::Free);
+        known_key_in_wrong_form(line, &["x", "y"])?;
+        return point(line, x).map(ArrowEnd::Free);
     }
-    let ([target], [x, y]) = fixed_split(line, ["x", "y"])?;
+    let ([target], [ax, ay]) = fixed_split(line, ["x", "y"], x)?;
     let id = ElementId::new(string(target)?).ok_or_else(|| bad(target.start, "expected an id"))?;
     let fraction = |e: &Entry| number(e, 4, 0, ANCHOR_MAX.into());
     Ok(ArrowEnd::Bound {
         target: id,
-        anchor: Anchor::new(fraction(x)?, fraction(y)?),
+        anchor: Anchor::new(fraction(ax)?, fraction(ay)?),
     })
 }
 
-fn heads(line: &Node) -> Result<Heads, Bad> {
-    let ([], [start, end]) = fixed_split(line, ["start", "end"])?;
+fn heads(line: &Node, x: &mut Extra) -> Result<Heads, Bad> {
+    let ([], [start, end]) = fixed_split(line, ["start", "end"], x)?;
     let table = [
         ("none", Head::None),
         ("arrow", Head::Arrow),
@@ -683,8 +744,8 @@ fn heads(line: &Node) -> Result<Heads, Bad> {
     })
 }
 
-fn font(line: &Node) -> Result<Font, Bad> {
-    let ([], [family, size, align]) = fixed_split(line, ["family", "size", "align"])?;
+fn font(line: &Node, x: &mut Extra) -> Result<Font, Bad> {
+    let ([], [family, size, align]) = fixed_split(line, ["family", "size", "align"], x)?;
     let families = [
         ("hand", FontFamily::Hand),
         ("normal", FontFamily::Normal),

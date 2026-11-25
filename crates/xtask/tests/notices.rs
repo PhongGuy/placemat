@@ -253,3 +253,16 @@ fn the_template_lists_every_licence_with_its_text_and_users() {
         assert!(hbs.contains(want), "{want} missing from about.hbs");
     }
 }
+
+#[test]
+fn the_template_carries_the_forked_kdlite_notice() {
+    let template = std::fs::read_to_string(xtask::workspace_root().join("about.hbs")).unwrap();
+    for needle in [
+        "kdlite 0.1.1",
+        "Copyright (c) 2025 1e1001",
+        "Copyright (c) 2025 Ferron",
+        "Permission is hereby granted, free of charge",
+    ] {
+        assert!(template.contains(needle), "about.hbs lacks {needle:?}");
+    }
+}

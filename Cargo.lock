@@ -174,7 +174,7 @@ checksum = "0258346f92c78dbc5b336b9a5b27c64447aa10643bc64e651db2edb145361564"
 dependencies = [
  "anstyle",
  "memchr",
- "unicode-width",
+ "unicode-width 0.2.3",
 ]
 
 [[package]]
@@ -953,7 +953,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width",
+ "unicode-width 0.2.3",
 ]
 
 [[package]]
@@ -2157,7 +2157,7 @@ dependencies = [
  "tree-sitter-json",
  "tree-sitter-sequel",
  "unicode-segmentation",
- "unicode-width",
+ "unicode-width 0.2.3",
  "uuid",
  "windows 0.58.0",
 ]
@@ -3799,6 +3799,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdl"
+version = "6.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "082ddf81b2acd76fe04412655d17befedfff1837db772f8e74c38050d25ed670"
+dependencies = [
+ "miette",
+ "num-traits",
+ "winnow 0.7.15",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4127,6 +4138,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "miette"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
+dependencies = [
+ "cfg-if",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -5159,6 +5180,8 @@ name = "placemat-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "fastrand",
+ "kdl",
  "minisign-verify",
  "thiserror 2.0.21",
 ]
@@ -7269,6 +7292,12 @@ name = "unicode-vo"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1d386ff53b415b7fe27b50bb44679e2cc4660272694b7b6f3326d8480823a94"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "unicode-width"

@@ -2,4 +2,5 @@
 
 #![deny(missing_docs)]
 
+pub mod kdl;
 pub mod update;

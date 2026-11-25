@@ -940,25 +940,29 @@ impl<'text> Parser<'text> {
         Ok(Some(loop {
             break match next_pop.take().ok_or(()).or_else(|()| self.next_event())? {
                 InnerEvent::Node { sd: true, .. } => {
-                    // continue until next node/end/finish
+                    // Skip the node with every block it owns: the skip ends only at the next
+                    // real sibling, the parent's close or the end. A slashdashed node still owns
+                    // at most one unslashdashed block, as a real one does.
                     // next_pop is always none here so we can just take events
                     let mut depth = 0_usize;
+                    let mut owns_real_block = false;
                     next_pop = loop {
                         match self.next_event()? {
                             node @ InnerEvent::Node { sd: false, .. } if depth == 0 => {
                                 break Some(node);
                             }
-                            InnerEvent::Begin { .. } => {
+                            InnerEvent::Begin { sd, offset } => {
+                                if depth == 0 && !sd {
+                                    if owns_real_block {
+                                        return Err(Error::MultipleChildren(offset));
+                                    }
+                                    owns_real_block = true;
+                                }
                                 depth =
                                     depth.checked_add(1).ok_or(Error::Overflow(self.cursor.0))?;
                             }
                             end @ InnerEvent::End { .. } => match depth.checked_sub(1) {
-                                Some(next) => {
-                                    depth = next;
-                                    if depth == 0 {
-                                        break None;
-                                    }
-                                }
+                                Some(next) => depth = next,
                                 None => break Some(end),
                             },
                             InnerEvent::Done => break Some(InnerEvent::Done),

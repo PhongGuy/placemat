@@ -151,3 +151,28 @@ fn a_second_child_block_is_reported_at_its_brace() {
     assert_eq!(events("a {} {}").unwrap_err(), Error::MultipleChildren(5));
     assert_eq!(events("a {}   {}").unwrap_err(), Error::MultipleChildren(7));
 }
+
+#[test]
+fn a_slashdashed_node_skips_every_block_it_owns() {
+    let got = events("/-n /-{} {x}\nm").unwrap();
+    assert_eq!(
+        got,
+        vec![Event::Node {
+            ty: None,
+            name: Cow::Borrowed("m"),
+            start: 13
+        }]
+    );
+}
+
+#[test]
+fn a_slashdashed_node_still_owns_at_most_one_real_block() {
+    assert_eq!(
+        events("/-n {a} {b}").unwrap_err(),
+        Error::MultipleChildren(8)
+    );
+    assert_eq!(
+        events("/-n /-{} {a} /-{} {b}").unwrap_err(),
+        Error::MultipleChildren(18)
+    );
+}

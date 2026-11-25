@@ -6,3 +6,4 @@
 mod common;
 mod compliance;
 mod reader;
+mod spec_cases;

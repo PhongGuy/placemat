@@ -48,6 +48,15 @@ impl Seed {
         if n <= Self::MAX { Some(Self(n)) } else { None }
     }
 
+    /// The seed `n`, or [`Seed::MAX`] when `n` is above it.
+    pub(crate) const fn clamped(n: u32) -> Self {
+        if n <= Self::MAX {
+            Self(n)
+        } else {
+            Self(Self::MAX)
+        }
+    }
+
     /// The seed's value.
     pub const fn get(self) -> u32 {
         self.0

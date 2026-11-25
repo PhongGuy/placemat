@@ -6,5 +6,7 @@
 // #[test] functions, not the helpers they call.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod edit;
 mod model;
+mod order;
 mod util;

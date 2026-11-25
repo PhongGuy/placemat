@@ -1,6 +1,8 @@
 //! Builders shared by the board tests.
 
-use placemat_core::board::{Boxed, Element, ElementId, Kind, Point, Seed, Size, ZKey};
+use placemat_core::board::{
+    Boxed, Element, ElementId, Kind, LimitReached, Point, Seed, Size, ZKey,
+};
 
 pub fn id(s: &str) -> ElementId {
     ElementId::new(s).unwrap()
@@ -25,4 +27,15 @@ pub fn rect(i: &str, x: i32, y: i32) -> Element {
         "a1",
         Kind::Rect(Boxed::new(Point::new(x, y), Size::new(200, 100))),
     )
+}
+
+pub fn labelled(i: &str, label: String) -> Element {
+    let mut boxed = Boxed::new(Point::new(0, 0), Size::new(1, 1));
+    boxed.label = Some(label);
+    el(i, 1, "a1", Kind::Rect(boxed))
+}
+
+/// `LimitReached` is non-exhaustive, so tests compare the limit's name.
+pub fn limit(r: Result<(), LimitReached>) -> Result<(), &'static str> {
+    r.map_err(|e| e.limit)
 }

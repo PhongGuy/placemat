@@ -916,18 +916,12 @@ impl<'text> Parser<'text> {
         };
         self.state = match event {
             InnerEvent::Node { .. } | InnerEvent::PropValue { .. } => ParserState::NodeProps,
-            InnerEvent::Begin { .. } => {
-                self.nest = self
-                    .nest
-                    .checked_add(1)
-                    .ok_or(Error::Overflow(self.cursor.0))?;
+            InnerEvent::Begin { offset, .. } => {
+                self.nest = self.nest.checked_add(1).ok_or(Error::Overflow(offset))?;
                 ParserState::NextNode
             }
-            InnerEvent::End { .. } => {
-                self.nest = self
-                    .nest
-                    .checked_sub(1)
-                    .ok_or(Error::Overflow(self.cursor.0))?;
+            InnerEvent::End { offset } => {
+                self.nest = self.nest.checked_sub(1).ok_or(Error::Overflow(offset))?;
                 ParserState::NodeChildren
             }
             InnerEvent::Done => ParserState::Done,
@@ -939,9 +933,6 @@ impl<'text> Parser<'text> {
         // sd value -> consume & loop
         let mut next_pop = None;
         Ok(Some(loop {
-            // this position is only the real start if next_pop is none
-            // used for diagnostics
-            let start_cursor = self.cursor;
             break match next_pop.take().ok_or(()).or_else(|()| self.next_event())? {
                 InnerEvent::Node { sd: true, .. } => {
                     // continue until next node/end/finish
@@ -1019,7 +1010,7 @@ impl<'text> Parser<'text> {
                     if self.begin_valid {
                         Event::Begin { offset }
                     } else {
-                        return Err(Error::MultipleChildren(start_cursor.0));
+                        return Err(Error::MultipleChildren(offset));
                     }
                 }
                 InnerEvent::End { offset } => {

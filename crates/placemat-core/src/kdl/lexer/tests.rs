@@ -145,3 +145,9 @@ fn number_syntax_follows_the_grammar() {
         "a sign then a non-digit is an identifier"
     );
 }
+
+#[test]
+fn a_second_child_block_is_reported_at_its_brace() {
+    assert_eq!(events("a {} {}").unwrap_err(), Error::MultipleChildren(5));
+    assert_eq!(events("a {}   {}").unwrap_err(), Error::MultipleChildren(7));
+}

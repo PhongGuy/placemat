@@ -14,6 +14,12 @@ use crate::board::{ArrowEnd, Board, Element, ElementId, Kind, ZKey};
 
 mod label;
 mod rough;
+mod view;
+
+pub use view::{
+    Camera, DASHES_MAX, DOT_BELOW_PX, Detail, LABEL_MAX_PX, LABEL_MIN_PX, SIMPLE_BELOW_PX,
+    dash_array, detail, label_px,
+};
 
 /// Measures text for layout, so the core stays free of any font engine.
 ///

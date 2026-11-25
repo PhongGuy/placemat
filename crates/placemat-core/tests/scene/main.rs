@@ -13,3 +13,4 @@ mod cull;
 mod extreme;
 mod golden;
 mod util;
+mod view;

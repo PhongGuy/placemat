@@ -8,6 +8,8 @@
     clippy::print_stderr
 )]
 
+mod rough;
+
 /// Measures text for layout, so the core stays free of any font engine.
 ///
 /// Implementations may return any `f32`; callers sanitise non-finite or negative results.

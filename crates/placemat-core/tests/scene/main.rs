@@ -12,5 +12,6 @@ mod boardgen;
 mod cull;
 mod extreme;
 mod golden;
+mod perf;
 mod util;
 mod view;

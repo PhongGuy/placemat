@@ -4,7 +4,8 @@ use placemat_core::board::{Access, Board, LIMITS, Warning, WriteError, load, wri
 
 use crate::boardgen;
 use crate::util::{
-    STACKED_BOXES, all_kinds_board, fixture, limit, limits_board, rect, stacked_hachure_board,
+    STACKED_BOXES, all_kinds_board, extremes_board, fixture, limit, limits_board, rect,
+    stacked_hachure_board, stacked_hachure_boxes,
 };
 
 const CANONICAL: [&str; 10] = [
@@ -108,5 +109,14 @@ fn the_stacked_hachure_board_is_within_the_limits_and_reopens() {
     assert_eq!(b.len(), STACKED_BOXES, "every box went in");
     let again = load(write(&b).unwrap().as_bytes()).unwrap();
     assert_eq!(again.warnings, [], "a valid board loads clean");
+    assert_eq!(again.board, b, "it round-trips");
+    let small = stacked_hachure_boxes(1000);
+    assert_eq!(small.len(), STACKED_BOXES, "every small box went in");
+}
+
+#[test]
+fn the_extremes_board_is_within_the_limits_and_reopens() {
+    let b = extremes_board();
+    let again = load(write(&b).unwrap().as_bytes()).unwrap();
     assert_eq!(again.board, b, "it round-trips");
 }

@@ -3,9 +3,9 @@
 use placemat_core::board::Board;
 use placemat_core::scene::Scene;
 
-use crate::board_util::limits_board;
+use crate::board_util::{extremes_board, limits_board};
 use crate::boardgen;
-use crate::util::{STUB, everything, extremes_board};
+use crate::util::{STUB, everything};
 
 /// Ops one element may hold, outline included; the measured worst case is about 50,000.
 const OPS_MAX: usize = 60_000;

@@ -274,3 +274,23 @@ async fn the_limits_board_paints_at_full_zoom_on_a_double_scale_display() {
 async fn the_stacked_hachure_board_paints_at_fit_and_full_zoom() {
     paint_at_fit_and_full_zoom(&board_util::stacked_hachure_board()).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hachured_box_paints_at_fit_and_full_zoom() {
+    use placemat_core::board::{Board, Boxed, Colour, Fill, FillStyle, Kind, Point, Size};
+    let mut body = Boxed::new(Point::new(-500, -500), Size::new(1000, 1000));
+    body.fill = Fill::Colour {
+        colour: Colour::rgb(0xa5, 0xd8, 0xff),
+        style: FillStyle::Hachure,
+    };
+    let mut board = Board::new();
+    board
+        .insert(board_util::el("box", 1, "a1", Kind::Rect(body)))
+        .unwrap();
+    paint_at_fit_and_full_zoom(&board).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hundred_stacked_hachured_boxes_paint_at_full_zoom() {
+    paint_at_fit_and_full_zoom(&board_util::stacked_hachure_boxes(1000)).await;
+}

@@ -6,15 +6,18 @@ use std::rc::Rc;
 use gpui_kit::accesskit::{self, Role};
 use gpui_kit::{
     A11ySubtreeBuilder, App, Bounds, ContentMask, Element, ElementId, GlobalElementId, Hsla,
-    InspectorElementId, LayoutId, Path, PathBuilder, Pixels, Point, Rgba, ShapedLine, SharedString,
-    Style, TextAlign, TextRun, Window, fill, font, point, px, relative, size,
+    InspectorElementId, LayoutId, LineJoin, Path, PathBuilder, PathStyle, Pixels, Point, Rgba,
+    ShapedLine, SharedString, StrokeOptions, Style, TextAlign, TextRun, Window, fill, font, point,
+    px, relative, size,
 };
 use placemat_core::board::{Align, Board, Element as BoardItem, Fill, Kind, Stroke};
 use placemat_core::scene::{
     Camera, Detail, Label, Op, OpSet, Rect, Scene, SetKind, Visible, dash_array, label_px,
 };
 
-use crate::viewer::budget::{Cost, Grant, allocate, label_cost, path_cost};
+use crate::viewer::budget::{
+    Cost, Grant, allocate, label_cost, path_cost, stroke_curves, stroke_l1, whole,
+};
 use crate::viewer::editor::ViewState;
 use crate::viewer::frame::{self, Item};
 use crate::viewer::measure::LINE_HEIGHT_EM;
@@ -117,8 +120,13 @@ impl Element for BoardElement {
         let corner = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
         let board = &self.opened.loaded.board;
         let scale = f64::from(window.scale_factor());
-        let planned = plan(&self.opened.scene, board, camera, viewport, scale);
-        let hit = planned.iter().any(|p| !p.whole());
+        let view = View {
+            camera,
+            viewport,
+            scale,
+        };
+        let planned = plan(&self.opened.scene, board, view);
+        let hit = planned.iter().any(|p| !whole(&p.cost, &p.grant));
         if hit != self.view.budget_hit.replace(hit) && cfg!(debug_assertions) {
             let state = if hit { "cuts" } else { "no longer cuts" };
             eprintln!("placemat: the frame budget {state} detail or labels");
@@ -127,7 +135,7 @@ impl Element for BoardElement {
         let mut draws = Vec::new();
         for p in planned {
             if let Some(e) = board.get(&p.item.id) {
-                build(&mut draws, &p, e, camera, corner, window);
+                build(&mut draws, &p, e, view, corner, window);
             }
             items.push(p.item);
         }
@@ -199,91 +207,178 @@ struct Planned<'a> {
     item: Item,
     cost: Cost,
     grant: Grant,
+    /// Each of `v.geometry.rough`'s sets priced, empty when the item cannot paint at Full.
+    rough: Vec<Priced>,
+    /// Each of `v.geometry.outline`'s sets priced, empty when the item paints as a dot.
+    outline: Vec<Priced>,
 }
 
 impl Planned<'_> {
-    /// Whether the budget left the item as its size on screen would draw it.
-    fn whole(&self) -> bool {
-        self.grant.detail == self.cost.natural && self.grant.label == (self.cost.glyphs > 0)
+    /// The sets to paint at the granted detail with their dash patterns: Full all `rough`,
+    /// Simple the `outline`'s Stroke sets, as `paint::painted` chooses them.
+    fn sets(&self) -> Vec<(&OpSet, Option<[f32; 2]>)> {
+        let g = self.v.geometry;
+        match self.grant.detail {
+            Detail::Full => g
+                .rough
+                .iter()
+                .zip(&self.rough)
+                .map(|(s, p)| (s, p.dash))
+                .collect(),
+            Detail::Simple => g
+                .outline
+                .iter()
+                .zip(&self.outline)
+                .filter(|(s, _)| s.kind == SetKind::Stroke)
+                .map(|(s, p)| (s, p.dash))
+                .collect(),
+            Detail::Dot | _ => Vec::new(),
+        }
     }
 }
 
-/// Culls the scene through `camera`, prices each visible element and grants it what the
-/// frame budget allows, in paint order.
-fn plan<'a>(
-    scene: &'a Scene,
-    board: &Board,
+/// One op set's dash pattern and estimated instance bytes this frame.
+#[derive(Clone, Copy, Debug)]
+struct Priced {
+    dash: Option<[f32; 2]>,
+    bytes: u64,
+}
+
+/// Where the frame paints: the canvas as the camera sees it, and the device scale.
+#[derive(Clone, Copy, Debug)]
+struct View {
     camera: Camera,
     viewport: (f64, f64),
     scale: f64,
-) -> Vec<Planned<'a>> {
-    let mut seen: Vec<(Visible<'a>, Item, Cost)> = scene
-        .visible(camera.view(viewport))
+}
+
+/// Culls the scene through the camera, prices each visible element and grants it what the
+/// frame budget allows, in paint order.
+fn plan<'a>(scene: &'a Scene, board: &Board, view: View) -> Vec<Planned<'a>> {
+    let mut seen: Vec<Planned<'a>> = scene
+        .visible(view.camera.view(view.viewport))
         .map(|v| {
-            let item = frame::item(&v, camera);
-            let cost = cost_of(&v, item.detail, board, camera, scale);
-            (v, item, cost)
+            let item = frame::item(&v, view.camera);
+            let natural = item.detail;
+            let (rough, outline) = match board.get(v.id) {
+                Some(e) => price_sets(&v, natural, &e.stroke, view),
+                None => (Vec::new(), Vec::new()),
+            };
+            let sum = |sets: &[Priced]| sets.iter().map(|p| p.bytes).fold(0, u64::saturating_add);
+            let simple: Vec<Priced> = v
+                .geometry
+                .outline
+                .iter()
+                .zip(&outline)
+                .filter(|(s, _)| s.kind == SetKind::Stroke)
+                .map(|(_, p)| *p)
+                .collect();
+            let glyphs = v
+                .geometry
+                .label
+                .as_ref()
+                .filter(|l| label_px(l.world_size, view.camera.zoom).is_some())
+                .map_or(0, |l| label_cost(&l.lines));
+            let cost = Cost::new(natural, sum(&rough), sum(&simple), glyphs);
+            Planned {
+                v,
+                item,
+                cost,
+                grant: Grant::new(Detail::Dot, false),
+                rough,
+                outline,
+            }
         })
         .collect();
-    let costs: Vec<Cost> = seen.iter().map(|s| s.2).collect();
-    seen.drain(..)
-        .zip(allocate(&costs))
-        .map(|((v, item, cost), grant)| Planned {
-            v,
-            item,
-            cost,
-            grant,
-        })
-        .collect()
+    let costs: Vec<Cost> = seen.iter().map(|p| p.cost).collect();
+    for (p, grant) in seen.iter_mut().zip(allocate(&costs)) {
+        p.grant = grant;
+    }
+    seen
 }
 
-/// The path bytes `v` costs at Full and Simple detail and the glyphs of its label, if the
-/// label is large enough to paint at this zoom.
-fn cost_of(v: &Visible<'_>, natural: Detail, board: &Board, camera: Camera, scale: f64) -> Cost {
-    let Some(e) = board.get(v.id) else {
-        return Cost::new(natural, 0, 0, 0);
-    };
-    let bytes = |detail| -> u64 {
-        paint::painted(v.geometry, detail)
-            .map(|set| {
-                let s = set_shape(set, &e.stroke, v.origin, camera);
-                path_cost(s.ops, s.dashes, s.len * scale as f32)
-            })
-            .fold(0, u64::saturating_add)
-    };
-    let glyphs = v
-        .geometry
-        .label
-        .as_ref()
-        .filter(|l| label_px(l.world_size, camera.zoom).is_some())
-        .map_or(0, |l| label_cost(&l.lines));
-    Cost::new(natural, bytes(Detail::Full), bytes(Detail::Simple), glyphs)
+/// Prices the sets an item at `natural` detail could paint: `rough` for Full, `outline` for
+/// Full or Simple; a dot prices nothing.
+fn price_sets(
+    v: &Visible<'_>,
+    natural: Detail,
+    stroke: &Stroke,
+    view: View,
+) -> (Vec<Priced>, Vec<Priced>) {
+    let price = |set: &OpSet| price(set, stroke, v.origin, view);
+    match natural {
+        Detail::Full => (
+            v.geometry.rough.iter().map(price).collect(),
+            v.geometry.outline.iter().map(price).collect(),
+        ),
+        Detail::Simple => (Vec::new(), v.geometry.outline.iter().map(price).collect()),
+        Detail::Dot | _ => (Vec::new(), Vec::new()),
+    }
 }
 
-/// The size of one op set on screen: its ops, its dashes and its length in logical pixels.
-struct SetShape {
-    ops: usize,
-    dashes: f32,
-    len: f32,
+/// The set's curve bound, device box and L1 length, and its dash pattern, from one walk.
+struct Shape {
+    curves: u64,
+    bounds: Rect,
+    l1: f64,
     dash: Option<[f32; 2]>,
 }
 
-fn set_shape(set: &OpSet, stroke: &Stroke, origin: (f64, f64), camera: Camera) -> SetShape {
-    let len = paint::screen_len(&set.ops, origin, camera);
-    let dash = (set.kind == SetKind::Stroke)
-        .then(|| {
-            dash_array(
-                stroke.dash,
-                paint::stroke_px(stroke.width, camera.zoom),
-                len,
-            )
-        })
-        .flatten();
-    SetShape {
-        ops: set.ops.len(),
-        dashes: dash.map_or(0.0, |[on, off]| len / (on + off)),
-        len,
+fn shape(set: &OpSet, stroke: &Stroke, origin: (f64, f64), view: View) -> Shape {
+    let zoom = view.camera.zoom;
+    let w = paint::walk(&set.ops, origin, view.camera, view.scale);
+    let len = w.len as f32;
+    let (width, dash) = match set.kind {
+        SetKind::Fill => (0.0, None),
+        SetKind::Sketch => (paint::sketch_px(stroke.width, zoom), None),
+        SetKind::Stroke | _ => {
+            let width = paint::stroke_px(stroke.width, zoom);
+            (width, dash_array(stroke.dash, width, len))
+        }
+    };
+    let dashes = dash.map_or(0.0, |[on, off]| len / (on + off));
+    let s = view.scale;
+    let curves = match set.kind {
+        SetKind::Fill => w.fill_curves,
+        SetKind::Sketch | SetKind::Stroke | _ => stroke_curves(w.segments, w.subpaths, dashes),
+    };
+    // A stroke reaches half its width past the control points.
+    let half = f64::from(width) / 2.0;
+    let b = w.bounds.unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0));
+    let bounds = Rect::new(
+        (b.x0 - half) * s,
+        (b.y0 - half) * s,
+        (b.x1 + half) * s,
+        (b.y1 + half) * s,
+    );
+    Shape {
+        curves,
+        bounds,
+        l1: match set.kind {
+            SetKind::Fill => w.l1 * s,
+            SetKind::Sketch | SetKind::Stroke | _ => stroke_l1(
+                w.l1 * s,
+                f64::from(width) * s,
+                w.segments,
+                w.subpaths,
+                dashes,
+            ),
+        },
         dash,
+    }
+}
+
+fn price(set: &OpSet, stroke: &Stroke, origin: (f64, f64), view: View) -> Priced {
+    let sh = shape(set, stroke, origin, view);
+    let clip = Rect::new(
+        0.0,
+        0.0,
+        view.viewport.0 * view.scale,
+        view.viewport.1 * view.scale,
+    );
+    Priced {
+        dash: sh.dash,
+        bytes: path_cost(sh.curves, sh.bounds, sh.l1, clip),
     }
 }
 
@@ -293,11 +388,11 @@ fn build(
     draws: &mut Vec<Draw>,
     p: &Planned<'_>,
     e: &BoardItem,
-    camera: Camera,
+    view: View,
     corner: (f32, f32),
     window: &mut Window,
 ) {
-    let (v, item) = (&p.v, &p.item);
+    let (v, item, camera, scale) = (&p.v, &p.item, view.camera, view.scale);
     let stroke = e.stroke;
     if matches!(p.grant.detail, Detail::Dot) {
         let (x, y) = (
@@ -315,13 +410,13 @@ fn build(
         Fill::Colour { colour, .. } => Some(paint::rgba(colour)),
         Fill::None | _ => None,
     };
-    for set in paint::painted(v.geometry, p.grant.detail) {
+    for (set, dash) in p.sets() {
         let colour = match set.kind {
             SetKind::Fill | SetKind::Sketch => fill_colour,
             SetKind::Stroke | _ => Some(paint::rgba(stroke.colour)),
         };
         let Some(colour) = colour else { continue };
-        if let Some(path) = path_of(set, &stroke, v.origin, camera, corner) {
+        if let Some(path) = path_of(set, &stroke, dash, v.origin, camera, corner, scale) {
             draws.push(Draw::Path(path, colour));
         }
     }
@@ -346,35 +441,74 @@ fn build(
 fn path_of(
     set: &OpSet,
     stroke: &Stroke,
+    dash: Option<[f32; 2]>,
     origin: (f64, f64),
     camera: Camera,
     corner: (f32, f32),
+    scale: f64,
 ) -> Option<Path> {
     let zoom = camera.zoom;
+    // Strokes join with bevels and arrive as lines: tiny-skia's curve offsetting has no
+    // bound on the curves it makes, while a line's offset and bevel are always five.
+    let stroked = |width: f32| {
+        PathBuilder::fill().with_style(PathStyle::Stroke(StrokeOptions {
+            line_width: width,
+            line_join: LineJoin::Bevel,
+            ..StrokeOptions::default()
+        }))
+    };
     let mut b = match set.kind {
         SetKind::Fill => PathBuilder::fill(),
-        SetKind::Sketch => PathBuilder::stroke(px(paint::sketch_px(stroke.width, zoom))),
-        SetKind::Stroke | _ => PathBuilder::stroke(px(paint::stroke_px(stroke.width, zoom))),
+        SetKind::Sketch => stroked(paint::sketch_px(stroke.width, zoom)),
+        SetKind::Stroke | _ => stroked(paint::stroke_px(stroke.width, zoom)),
     };
-    if let Some([on, off]) = set_shape(set, stroke, origin, camera).dash {
+    if let Some([on, off]) = dash {
         b = b.dash_array(&[px(on), px(off)]);
     }
     // paint_path ignores the element's offset, so every point carries the canvas corner.
-    let at = |x: f32, y: f32| {
-        let (sx, sy) = paint::to_px((x, y), origin, camera);
-        point(px(corner.0 + sx), px(corner.1 + sy))
-    };
+    let local = |x: f32, y: f32| paint::to_px((x, y), origin, camera);
+    let at = |(x, y): (f32, f32)| point(px(corner.0 + x), px(corner.1 + y));
+    let mut current = (0.0_f32, 0.0_f32);
     for op in &set.ops {
         match *op {
-            Op::Move(x, y) => b.move_to(at(x, y)),
-            Op::Line(x, y) => b.line_to(at(x, y)),
+            Op::Move(x, y) => {
+                current = local(x, y);
+                b.move_to(at(current));
+            }
+            Op::Line(x, y) => {
+                current = local(x, y);
+                b.line_to(at(current));
+            }
             Op::Cubic([ax, ay, bx, by, x, y]) => {
-                b.cubic_bezier_to(at(x, y), at(ax, ay), at(bx, by))
+                let p = [current, local(ax, ay), local(bx, by), local(x, y)];
+                if set.kind == SetKind::Fill {
+                    b.cubic_bezier_to(at(p[3]), at(p[1]), at(p[2]));
+                } else {
+                    let n = paint::cubic_segments(p, scale);
+                    for i in 1..n {
+                        b.line_to(at(cubic_at(p, f64::from(i) / f64::from(n))));
+                    }
+                    b.line_to(at(p[3]));
+                }
+                current = p[3];
             }
             _ => {}
         }
     }
     b.build().ok()
+}
+
+/// The point at `t` along the cubic with control points `p`.
+fn cubic_at(p: [(f32, f32); 4], t: f64) -> (f32, f32) {
+    let u = 1.0 - t;
+    let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+    let axis = |f: fn((f32, f32)) -> f32| -> f32 {
+        p.iter()
+            .zip(w)
+            .map(|(q, k)| f64::from(f(*q)) * k)
+            .sum::<f64>() as f32
+    };
+    (axis(|q| q.0), axis(|q| q.1))
 }
 
 /// Shapes each label line in Inter at the label's screen size, aligned within the widest line;
@@ -470,30 +604,37 @@ mod board_util;
 
 #[cfg(test)]
 mod tests {
-    use placemat_core::board::read_file;
+    use placemat_core::board::{Boxed, FillStyle, Point, Size, read_file};
     use placemat_core::scene::FixedAdvance;
 
-    use super::board_util::{all_kinds_board, limits_board, stacked_hachure_board};
+    use super::board_util::{
+        all_kinds_board, el, extremes_board, limits_board, stacked_hachure_board,
+        stacked_hachure_boxes,
+    };
     use super::*;
-    use crate::viewer::budget::{CURVES_PER_DASH, CURVES_PER_OP, GLYPHS_MAX, PATH_BYTES_MAX};
+    use crate::viewer::budget::{GLYPHS_MAX, PATH_BYTES_MAX};
 
     const VIEWPORT: (f64, f64) = (1280.0, 800.0);
     const SCALE: f64 = 2.0;
     const MEASURE: FixedAdvance = FixedAdvance::new(0.6, LINE_HEIGHT_EM);
 
-    fn fitted(scene: &Scene) -> Camera {
-        scene
+    fn fitted(scene: &Scene) -> View {
+        let camera = scene
             .bounds()
-            .map_or_else(Camera::default, |b| Camera::fit(b, VIEWPORT))
+            .map_or_else(Camera::default, |b| Camera::fit(b, VIEWPORT));
+        View {
+            camera,
+            viewport: VIEWPORT,
+            scale: SCALE,
+        }
     }
 
-    fn at_max_zoom(scene: &Scene) -> Camera {
-        let mut c = fitted(scene);
-        c.zoom_about(
-            (VIEWPORT.0 / 2.0, VIEWPORT.1 / 2.0),
-            Camera::MAX_ZOOM / c.zoom,
-        );
-        c
+    fn at_max_zoom(scene: &Scene) -> View {
+        let mut view = fitted(scene);
+        let factor = Camera::MAX_ZOOM / view.camera.zoom;
+        view.camera
+            .zoom_about((VIEWPORT.0 / 2.0, VIEWPORT.1 / 2.0), factor);
+        view
     }
 
     fn granted_bytes(p: &Planned<'_>) -> u64 {
@@ -511,11 +652,25 @@ mod tests {
         read_file(&path).unwrap().board
     }
 
+    /// One hachured, dashed box `side` units square, centred on the origin.
+    fn hachured_box(side: i32) -> Board {
+        let mut body = Boxed::new(Point::new(-side / 2, -side / 2), Size::new(side, side));
+        body.fill = Fill::Colour {
+            colour: placemat_core::board::Colour::rgb(0xa5, 0xd8, 0xff),
+            style: FillStyle::Hachure,
+        };
+        let mut e = el("box", 1, "a1", Kind::Rect(body));
+        e.stroke.dash = placemat_core::board::Dash::Dashed;
+        let mut b = Board::new();
+        b.insert(e).unwrap();
+        b
+    }
+
     #[test]
     fn the_limits_board_at_fit_fills_the_glyph_pool_and_keeps_every_leaf() {
         let board = limits_board();
         let scene = Scene::build(&board, &MEASURE);
-        let planned = plan(&scene, &board, fitted(&scene), VIEWPORT, SCALE);
+        let planned = plan(&scene, &board, fitted(&scene));
         let glyphs: usize = planned
             .iter()
             .filter(|p| p.grant.label)
@@ -543,9 +698,9 @@ mod tests {
         for name in ["grid-1000.board", "grid-10000.board"] {
             let board = grid(name);
             let scene = Scene::build(&board, &MEASURE);
-            for p in plan(&scene, &board, fitted(&scene), VIEWPORT, SCALE) {
+            for p in plan(&scene, &board, fitted(&scene)) {
                 assert!(
-                    p.whole(),
+                    whole(&p.cost, &p.grant),
                     "{name} {}: {:?} for {:?}",
                     p.item.id,
                     p.grant,
@@ -555,61 +710,160 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_hachured_box_keeps_its_fill_at_full_zoom() {
+        let board = hachured_box(1000);
+        let scene = Scene::build(&board, &MEASURE);
+        let planned = plan(&scene, &board, at_max_zoom(&scene));
+        let p = &planned[0];
+        assert_eq!(p.grant.detail, Detail::Full, "{:?}", p.cost);
+        assert!(
+            p.cost.full <= PATH_BYTES_MAX,
+            "estimated {} bytes",
+            p.cost.full
+        );
+    }
+
+    #[test]
+    fn the_largest_box_at_fit_drops_to_its_outline_when_full_overflows_the_pool() {
+        let board = hachured_box(1 << 24);
+        let scene = Scene::build(&board, &MEASURE);
+        let planned = plan(&scene, &board, fitted(&scene));
+        let p = &planned[0];
+        assert_eq!(p.grant.detail, Detail::Simple, "{:?}", p.cost);
+        assert!(
+            p.cost.full > PATH_BYTES_MAX,
+            "Full would have fit: {:?}",
+            p.cost
+        );
+    }
+
+    /// Asserts the allocation rule: the pools hold everything granted, and an item was cut
+    /// only when the next detail up cost more than was left at its turn, topmost first.
+    fn assert_the_rule(name: &str, planned: &[Planned<'_>]) {
+        let glyphs: usize = planned
+            .iter()
+            .filter(|p| p.grant.label)
+            .map(|p| p.cost.glyphs)
+            .sum();
+        assert!(glyphs <= GLYPHS_MAX, "{name}: {glyphs} glyphs granted");
+        let mut left = PATH_BYTES_MAX;
+        for p in planned.iter().rev() {
+            let up = match (p.cost.natural, p.grant.detail) {
+                (Detail::Full, Detail::Simple) => Some(p.cost.full),
+                (Detail::Full | Detail::Simple, Detail::Dot) => Some(p.cost.simple),
+                _ => None,
+            };
+            if let Some(up) = up {
+                assert!(
+                    up > left,
+                    "{name} {}: cut with {left} left: {:?}",
+                    p.item.id,
+                    p.cost
+                );
+            }
+            let spent = granted_bytes(p);
+            assert!(spent <= left, "{name} {} overdrew the pool", p.item.id);
+            left -= spent;
+        }
+    }
+
+    #[test]
+    fn the_limits_board_at_full_zoom_degrades_only_what_the_pool_cannot_hold() {
+        let board = limits_board();
+        let scene = Scene::build(&board, &MEASURE);
+        let planned = plan(&scene, &board, at_max_zoom(&scene));
+        let top = planned.last().unwrap();
+        assert_eq!(
+            top.grant.detail, top.cost.natural,
+            "the topmost item is whole"
+        );
+        assert_the_rule("limits at zoom 30", &planned);
+    }
+
+    #[test]
+    fn the_stacked_boxes_at_fit_follow_the_rule() {
+        let board = stacked_hachure_board();
+        let scene = Scene::build(&board, &MEASURE);
+        assert_the_rule("stacked at fit", &plan(&scene, &board, fitted(&scene)));
+    }
+
+    #[test]
+    fn a_hundred_stacked_small_boxes_at_full_zoom_nearly_fill_the_pool() {
+        let board = stacked_hachure_boxes(1000);
+        let scene = Scene::build(&board, &MEASURE);
+        let planned = plan(&scene, &board, at_max_zoom(&scene));
+        assert_the_rule("small stacked at zoom 30", &planned);
+        let full = planned
+            .iter()
+            .filter(|p| p.grant.detail == Detail::Full)
+            .count();
+        let bytes = planned
+            .iter()
+            .map(granted_bytes)
+            .fold(0, u64::saturating_add);
+        assert!(full >= 7, "only {full} boxes granted Full");
+        assert!(bytes > 48 << 20, "only {bytes} bytes granted");
+        println!("PERF estimate small stacked at zoom 30: {bytes} bytes, {full} Full");
+    }
+
     /// The curve-bound breaches of every set an item would paint at its natural detail, and
-    /// the most curves seen per op on a solid set and per op on a dashed one.
-    fn curve_counts(name: &str, board: &Board, camera: Camera) -> (Vec<String>, f64, f64) {
+    /// the most real curves seen against the bound, per set kind.
+    fn curve_counts(name: &str, board: &Board, view: View) -> (Vec<String>, [f64; 2]) {
         let scene = Scene::build(board, &MEASURE);
-        let (mut breaches, mut solid, mut dashed) = (Vec::new(), 0.0_f64, 0.0_f64);
-        for p in plan(&scene, board, camera, VIEWPORT, SCALE) {
+        let (mut breaches, mut worst) = (Vec::new(), [0.0_f64; 2]);
+        for p in plan(&scene, board, view) {
             let Some(e) = board.get(&p.item.id) else {
                 continue;
             };
             for set in paint::painted(p.v.geometry, p.cost.natural) {
-                let Some(path) = path_of(set, &e.stroke, p.v.origin, camera, (0.0, 0.0)) else {
+                let sh = shape(set, &e.stroke, p.v.origin, view);
+                let built = path_of(
+                    set,
+                    &e.stroke,
+                    sh.dash,
+                    p.v.origin,
+                    view.camera,
+                    (0.0, 0.0),
+                    view.scale,
+                );
+                let Some(path) = built else {
                     continue;
                 };
                 let curves = format!("{path:?}").matches("PathCurve {").count() as u64;
-                let s = set_shape(set, &e.stroke, p.v.origin, camera);
-                let ops = s.ops as u64;
-                let ratio = curves as f64 / ops.max(1) as f64;
-                if s.dash.is_some() {
-                    dashed = dashed.max(ratio);
-                } else {
-                    solid = solid.max(ratio);
-                }
-                // Flattening adds curves along the length, which the cost charges per tile.
-                let dashes = (CURVES_PER_DASH as f32 * s.dashes).ceil() as u64;
-                let tiles = (s.len * SCALE as f32 / 16.0).ceil() as u64;
-                if curves > CURVES_PER_OP * ops + dashes + tiles {
+                let k = usize::from(set.kind != SetKind::Fill);
+                worst[k] = worst[k].max(curves as f64 / sh.curves.max(1) as f64);
+                if curves > sh.curves {
                     breaches.push(format!(
-                        "{name} {} {:?}: {curves} curves from {ops} ops, {} dashes, {} device px",
+                        "{name} {} {:?}: {curves} curves over a bound of {} ({} ops, dash {:?})",
                         p.item.id,
                         set.kind,
-                        s.dashes,
-                        s.len * SCALE as f32
+                        sh.curves,
+                        set.ops.len(),
+                        sh.dash
                     ));
                 }
             }
         }
-        (breaches, solid, dashed)
+        (breaches, worst)
     }
 
     #[test]
-    fn stroked_sets_stay_within_the_curve_bound() {
+    fn built_sets_stay_within_their_curve_bound() {
         let boards = [
             ("limits", limits_board()),
             ("all kinds", all_kinds_board()),
+            ("extremes", extremes_board()),
             ("stacked hachure", stacked_hachure_board()),
         ];
         let mut breaches = Vec::new();
         for (name, board) in &boards {
             let scene = Scene::build(board, &MEASURE);
-            for (at, camera) in [("fit", fitted(&scene)), ("zoom 30", at_max_zoom(&scene))] {
-                let (found, solid, dashed) =
-                    curve_counts(&format!("{name} at {at}"), board, camera);
+            for (at, view) in [("fit", fitted(&scene)), ("zoom 30", at_max_zoom(&scene))] {
+                let (found, [fill, stroke]) = curve_counts(&format!("{name} at {at}"), board, view);
                 println!(
-                    "PERF curves {name} at {at}: at most {solid:.2} per op solid, {dashed:.2} \
-                     dashed, {} breaches",
+                    "PERF curves {name} at {at}: worst real/bound {fill:.3} fill, {stroke:.3} \
+                     stroke, {} breaches",
                     found.len()
                 );
                 breaches.extend(found);

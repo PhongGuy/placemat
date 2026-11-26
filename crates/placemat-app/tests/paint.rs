@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use gpui_kit::Rgba;
-use placemat_app::viewer::paint::{painted, rgba, screen_len, sketch_px, stroke_px, to_px};
+use placemat_app::viewer::paint::{
+    cubic_segments, painted, rgba, screen_len, sketch_px, stroke_px, to_px,
+};
 use placemat_core::board::{Colour, read_file};
 use placemat_core::scene::{Camera, Detail, FixedAdvance, Op, Rect, Scene, SetKind};
 
@@ -90,4 +92,20 @@ fn each_detail_paints_its_own_sets() {
         "{simple:?}"
     );
     assert_eq!(painted(hachured, Detail::Dot).count(), 0);
+}
+
+#[test]
+fn a_straight_cubic_flattens_to_one_line() {
+    let p = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)];
+    assert_eq!(cubic_segments(p, 2.0), 1, "no curvature, one line");
+}
+
+#[test]
+fn a_bent_cubic_flattens_by_the_root_of_its_curvature() {
+    // Second differences of 8 * sqrt(2) px: ceil(sqrt(11.3 / 2)) = 3 at scale 1.
+    let p = [(0.0, 0.0), (0.0, 8.0), (8.0, 8.0), (8.0, 0.0)];
+    assert_eq!(cubic_segments(p, 1.0), 3, "scale 1");
+    assert_eq!(cubic_segments(p, 4.0), 5, "scale 4: ceil(sqrt(45.3 / 2))");
+    let huge = [(0.0, 0.0), (0.0, 1e6), (1e6, 1e6), (1e6, 0.0)];
+    assert_eq!(cubic_segments(huge, 2.0), 32, "capped");
 }

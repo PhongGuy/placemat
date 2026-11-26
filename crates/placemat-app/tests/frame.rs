@@ -214,9 +214,9 @@ fn leaf_bounds_move_onto_the_window_clip_to_the_canvas_and_scale() {
 }
 
 #[test]
-fn the_canvas_node_is_named_board_for_session_trees() {
+fn the_canvas_node_is_named_board_canvas_for_session_trees() {
     let mut node = accesskit::Node::new(Role::Canvas);
     canvas_info(&mut node);
-    assert_eq!(node.author_id(), Some("board"));
+    assert_eq!(node.author_id(), Some("board-canvas"));
     assert_eq!(node.label(), Some("Board"));
 }

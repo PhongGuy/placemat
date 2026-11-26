@@ -27,7 +27,9 @@ async fn try_ok(pilot: &Pilot, tool: &str, args: Value) -> Result<Value, String>
 }
 
 /// A pan recorded in session mode: frames are damage stamps there, so only the p95 interval
-/// means anything. Every step reports failure instead of panicking.
+/// means anything. The tree is read only before the motion, since accesskit lags behind a
+/// moving tree; the pan itself uses point targets. Every step reports failure instead of
+/// panicking.
 async fn session_pan(pilot: &Pilot, board: &Path) -> Result<Value, String> {
     let mut args = launch_with("session", &[board]);
     args["replace"] = json!(true);
@@ -35,18 +37,18 @@ async fn session_pan(pilot: &Pilot, board: &Path) -> Result<Value, String> {
     let tree = try_ok(
         pilot,
         "tree",
-        json!({"wait_for": {"id": ["board"]}, "timeout_ms": 30_000}),
+        json!({"wait_for": {"id": ["board-canvas"]}, "timeout_ms": 30_000}),
     )
     .await?;
     let b = &tree["nodes"]
         .as_array()
         .and_then(|ns| {
             ns.iter().find(|n| {
-                n["id"] == json!("board")
-                    || n["path"].as_array().and_then(|p| p.last()) == Some(&json!("board"))
+                n["id"] == json!("board-canvas")
+                    || n["path"].as_array().and_then(|p| p.last()) == Some(&json!("board-canvas"))
             })
         })
-        .ok_or("no board in the session tree")?["bounds"];
+        .ok_or("no board-canvas in the session tree")?["bounds"];
     let (cx, cy) = (
         b["x"].as_f64().unwrap_or(0.0) + b["w"].as_f64().unwrap_or(0.0) / 2.0,
         b["y"].as_f64().unwrap_or(0.0) + b["h"].as_f64().unwrap_or(0.0) / 2.0,

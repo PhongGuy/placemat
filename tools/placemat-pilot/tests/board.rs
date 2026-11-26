@@ -48,6 +48,18 @@ async fn a_board_path_opens_the_board_in_place_of_the_placeholder() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_empty_board_keeps_the_board_id_unique() {
+    // With no leaves the canvas node is an authored row of its own, so it must not share `board`.
+    let pilot = Pilot::start().await;
+    let path = fixture("canonical/empty.board");
+    pilot.ok("launch", launch_with("headless", &[&path])).await;
+    pilot.ok("wait", json!({"target": {"id": ["board"]}})).await;
+    pilot
+        .ok("wait", json!({"target": {"id": ["board-canvas"]}}))
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_path_that_does_not_open_leaves_the_placeholder() {
     let pilot = Pilot::start().await;
     let dir = tempfile::TempDir::new().unwrap();

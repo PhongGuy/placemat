@@ -196,4 +196,4 @@ jobs:
           --git https://github.com/PhongGuy/gpui-pilot
           --rev f650d0eec0bdf78307f18d4df8c31b8de035d6ea
       - name: Pilot scenarios
-        run: make LOCKED=--locked pilot-check
+        run: make LOCKED=--locked pilot-check-ci

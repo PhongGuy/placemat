@@ -31,6 +31,7 @@ fn main() {
         .run(|cx| {
             gpui_kit::init(cx);
             placemat_app::theme::install(cx);
+            placemat_app::viewer::init(cx);
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();

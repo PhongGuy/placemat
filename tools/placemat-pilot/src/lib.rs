@@ -18,6 +18,7 @@ impl PilotApp for Placemat {
     fn init(&self, cx: &mut App) {
         gpui_kit::init(cx);
         placemat_app::theme::install(cx);
+        placemat_app::viewer::init(cx);
     }
 
     /// Opens the window as the app's own command line would, so `launch.args` name the board.

@@ -8,4 +8,5 @@
 
 mod launch_args;
 mod open;
+mod paint;
 mod window;

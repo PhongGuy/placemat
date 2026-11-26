@@ -2,3 +2,4 @@
 
 pub mod measure;
 pub mod open;
+pub mod paint;

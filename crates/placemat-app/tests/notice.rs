@@ -44,13 +44,16 @@ fn file_errors_say_what_is_wrong_with_the_path() {
 }
 
 #[test]
-fn clean_drops_bidi_controls_and_flattens_control_characters() {
-    assert_eq!(clean("report\u{202E}txt.exe"), "reporttxt.exe");
+fn clean_tags_hidden_characters_and_flattens_newlines_and_tabs() {
+    assert_eq!(clean("report\u{202E}txt.exe"), "report<U+202E>txt.exe");
     assert_eq!(
         clean("a\u{2066}b\u{2069}c\u{200F}d\u{061C}e\u{200E}"),
-        "abcde"
+        "a<U+2066>b<U+2069>c\u{200F}d\u{061C}e\u{200E}"
     );
-    assert_eq!(clean("one\ntwo\tthree\u{7}\u{85}"), "one two three  ");
+    assert_eq!(
+        clean("one\ntwo\tthree\u{7}\u{85}"),
+        "one two three<U+0007><U+0085>"
+    );
 }
 
 #[test]
@@ -83,7 +86,37 @@ fn error_text_is_cleaned() {
 fn a_file_name_is_cleaned() {
     let text = error_text(Path::new("plan\u{202E}draob.exe"), &OpenError::NotAFile);
     assert!(!text.contains('\u{202E}'), "{text}");
-    assert!(text.contains("plandraob.exe"), "{text}");
+    assert!(text.contains("plan<U+202E>draob.exe"), "{text}");
+}
+
+#[test]
+fn a_banner_cut_never_splits_a_tag() {
+    let tag = "<U+202E>";
+    assert_eq!(
+        clean(&"\u{202E}".repeat(30)),
+        tag.repeat(30),
+        "exactly 240: no ellipsis"
+    );
+    let room = (NOTICE_CHARS - 1) / tag.len();
+    assert_eq!(
+        clean(&"\u{202E}".repeat(31)),
+        format!("{}\u{2026}", tag.repeat(room))
+    );
+    let shifted = clean(&format!("ab{}", "\u{202E}".repeat(100)));
+    assert_eq!(shifted, format!("ab{}\u{2026}", tag.repeat(29)));
+    assert!(shifted.chars().count() <= NOTICE_CHARS, "{shifted}");
+}
+
+#[test]
+fn a_huge_input_is_cut_at_the_output_bound() {
+    // Several MiB in one shown span and in one run of hidden code points: the bound is on
+    // output, so both come back at most NOTICE_CHARS chars.
+    let plain = clean(&"x".repeat(8 << 20));
+    assert_eq!(plain, format!("{}\u{2026}", "x".repeat(NOTICE_CHARS - 1)));
+    let hidden = clean(&"\u{202E}".repeat(2 << 20));
+    assert_eq!(hidden, format!("{}\u{2026}", "<U+202E>".repeat(29)));
+    let mixed = clean(&format!("{}\u{202E}", "\u{a}".repeat(4 << 20)));
+    assert_eq!(mixed, format!("{}\u{2026}", " ".repeat(NOTICE_CHARS - 1)));
 }
 
 #[test]

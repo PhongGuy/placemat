@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use placemat_core::board::{End, LIMITS, OpenError, Warning};
+use placemat_core::text::{self, Piece};
 
 /// The most chars one banner line shows, the closing ellipsis included.
 pub const NOTICE_CHARS: usize = 240;
@@ -12,27 +13,61 @@ pub const NOTICE_CHARS: usize = 240;
 /// How many repairs the warnings banner lists before it counts the rest.
 pub const WARNING_LINES: usize = 5;
 
-/// The bidi format characters that can reorder text around them; std has no bidi-class query.
-const BIDI_FORMAT: [char; 12] = [
-    '\u{061C}', '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}',
-    '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
-];
+/// Banner text under construction; `fit` is the byte length of the last cut that leaves room
+/// for the ellipsis.
+struct Bounded {
+    out: String,
+    count: usize,
+    fit: usize,
+}
 
-/// Turns control characters into spaces, drops bidi format characters, and cuts the result to
-/// [`NOTICE_CHARS`] chars ending in an ellipsis when it is longer.
-pub fn clean(s: &str) -> String {
-    // The wider invisible-character policy (zero-width and line separators) is left to later work.
-    let filtered: Vec<char> = s
-        .chars()
-        .filter(|c| !BIDI_FORMAT.contains(c))
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect();
-    if filtered.len() <= NOTICE_CHARS {
-        return filtered.into_iter().collect();
+impl Bounded {
+    /// Appends `unit`; false once the text passes [`NOTICE_CHARS`], after cutting it back to
+    /// `fit` and closing it with the ellipsis.
+    fn push(&mut self, unit: &str) -> bool {
+        self.out.push_str(unit);
+        self.count += unit.chars().count();
+        if self.count > NOTICE_CHARS {
+            self.out.truncate(self.fit);
+            self.out.push('\u{2026}');
+            return false;
+        }
+        if self.count < NOTICE_CHARS {
+            self.fit = self.out.len();
+        }
+        true
     }
-    let mut cut: String = filtered.into_iter().take(NOTICE_CHARS - 1).collect();
-    cut.push('\u{2026}');
-    cut
+}
+
+/// Turns newlines and tabs into spaces, shows hidden code points as `<U+XXXX>` tags, and cuts
+/// the result to [`NOTICE_CHARS`] chars ending in an ellipsis when it is longer, never inside
+/// a tag.
+pub fn clean(s: &str) -> String {
+    // Expand one unit, a shown char or a whole tag, at a time and stop at the first one past
+    // the bound, so a 16 MiB loader message is never expanded whole. `if let`, not `match`:
+    // `Piece` is non-exhaustive here and the workspace warns on wildcard enum arms.
+    let mut b = Bounded {
+        out: String::new(),
+        count: 0,
+        fit: 0,
+    };
+    let mut buf = [0; 4];
+    for piece in text::pieces(s) {
+        let more = if let Piece::Text(t) = piece {
+            t.chars().all(|c| {
+                let c = if c == '\n' || c == '\t' { ' ' } else { c };
+                b.push(c.encode_utf8(&mut buf))
+            })
+        } else if let Piece::Hidden(c) = piece {
+            b.push(&text::tag(c))
+        } else {
+            true
+        };
+        if !more {
+            break;
+        }
+    }
+    b.out
 }
 
 /// "Could not open <file name>: <error>", cleaned; the file name falls back to the whole path.

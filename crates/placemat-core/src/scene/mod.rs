@@ -156,12 +156,22 @@ pub struct OpSet {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label {
-    /// The lines in order, already broken and capped.
-    pub lines: Vec<String>,
+    /// The lines in order, already broken, capped and expanded for display.
+    pub lines: Vec<LabelLine>,
     /// Font size in world units.
     pub world_size: f32,
     /// Top-left corner of the text block, local to the element's origin.
     pub at: (f32, f32),
+}
+
+/// One label line as it is shown: hidden code points tagged, tabs as spaces.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LabelLine {
+    /// The display text: tags inlined, tabs as spaces.
+    pub text: String,
+    /// Byte ranges of `text` that are tags, ascending and disjoint.
+    pub hidden: Vec<std::ops::Range<usize>>,
 }
 
 /// An element's cached geometry: the hand-drawn sets, a plain outline for selection and

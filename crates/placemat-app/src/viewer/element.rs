@@ -542,7 +542,7 @@ fn label_lines(
         .iter()
         .map(|line| {
             let run = TextRun {
-                len: line.len(),
+                len: line.text.len(),
                 font: font("Inter"),
                 color: colour,
                 background_color: None,
@@ -550,7 +550,7 @@ fn label_lines(
                 strikethrough: None,
             };
             window.text_system().shape_line(
-                SharedString::from(line.clone()),
+                SharedString::from(line.text.clone()),
                 px(size_px),
                 &[run],
                 None,

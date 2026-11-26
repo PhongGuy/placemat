@@ -263,7 +263,8 @@ fn a_text_is_its_measured_block_with_no_ops() {
     assert_eq!(b.origin, (10.0, 20.0));
     assert_eq!(b.bounds, Rect::new(10.0, 20.0, 50.0, 70.0));
     let label = b.geometry.label.clone().unwrap();
-    assert_eq!(label.lines, ["abcd", "ef"]);
+    let texts: Vec<&str> = label.lines.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(texts, ["abcd", "ef"]);
     assert_eq!((label.world_size, label.at), (20.0, (0.0, 0.0)));
     assert!(
         b.geometry.rough.is_empty() && b.geometry.outline.is_empty(),

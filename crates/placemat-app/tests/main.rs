@@ -7,4 +7,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod launch_args;
+mod open;
 mod window;

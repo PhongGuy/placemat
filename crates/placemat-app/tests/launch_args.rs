@@ -9,8 +9,18 @@ fn args(list: &[&str]) -> Vec<OsString> {
 }
 
 #[test]
-fn no_arguments_open_the_window() {
-    assert_eq!(parse(args(&[])), Ok(Launch::Open));
+fn no_arguments_open_the_window_with_no_board() {
+    assert_eq!(parse(args(&[])), Ok(Launch::Open { path: None }));
+}
+
+#[test]
+fn one_positional_argument_is_the_board_to_open() {
+    assert_eq!(
+        parse(args(&["boards/x.board"])),
+        Ok(Launch::Open {
+            path: Some("boards/x.board".into())
+        })
+    );
 }
 
 #[test]
@@ -35,10 +45,27 @@ fn an_unknown_flag_is_refused() {
 }
 
 #[test]
-fn a_positional_argument_is_refused() {
+fn a_second_path_is_refused() {
     assert_eq!(
-        parse(args(&["board.json"])),
-        Err(LaunchError::UnexpectedArgument("board.json".into()))
+        parse(args(&["a.board", "b.board"])),
+        Err(LaunchError::UnexpectedArgument("b.board".into()))
+    );
+}
+
+#[test]
+fn an_unknown_flag_beside_a_path_is_refused() {
+    assert_eq!(
+        parse(args(&["a.board", "--bogus"])),
+        Err(LaunchError::UnknownFlag("--bogus".into()))
+    );
+}
+
+#[test]
+fn the_usage_names_the_path_argument() {
+    assert!(
+        placemat_app::launch::USAGE.starts_with("Usage: placemat [PATH]"),
+        "{}",
+        placemat_app::launch::USAGE
     );
 }
 

@@ -5,7 +5,7 @@ mod common;
 use common::{Pilot, find_node, fixture, launch_with, leaves, meets, node, rect, segment};
 use serde_json::{Value, json};
 
-/// The path segments above a leaf, as gpui-pilot v0.9.1 reports them; pinned from a real run.
+/// The path segments above a leaf, as gpui-pilot v0.9.3 reports them; pinned from a real run.
 const LEAF_PREFIX: &[&str] = &[];
 
 #[allow(dead_code)]

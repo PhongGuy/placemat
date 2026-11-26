@@ -60,25 +60,43 @@ async fn an_empty_board_keeps_the_board_id_unique() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_path_that_does_not_open_leaves_the_placeholder() {
+async fn a_path_that_does_not_open_shows_why_over_the_placeholder() {
     let pilot = Pilot::start().await;
     let dir = tempfile::TempDir::new().unwrap();
     let missing = dir.path().join("missing.board");
     pilot
         .ok("launch", launch_with("headless", &[&missing]))
         .await;
-    let tree = pilot.ok("tree", json!({})).await;
+    // Wait for the outcome, so "failed" is never confused with "not loaded yet".
+    let tree = pilot
+        .ok("tree", json!({"wait_for": {"id": ["board-error"]}}))
+        .await;
     node(&tree, "placeholder");
     assert!(find_node(&tree, "board").is_none(), "{tree}");
+    let why = node(&tree, "board-error")["name"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        why.contains("missing.board") && why.contains("cannot read the board"),
+        "{why}"
+    );
     let mut again = launch_with("headless", &[dir.path()]);
     again["replace"] = json!(true);
     pilot.ok("launch", again).await;
-    let tree = pilot.ok("tree", json!({})).await;
+    let tree = pilot
+        .ok("tree", json!({"wait_for": {"id": ["board-error"]}}))
+        .await;
     node(&tree, "placeholder");
     assert!(
         find_node(&tree, "board").is_none(),
         "a directory is not a board: {tree}"
     );
+    let why = node(&tree, "board-error")["name"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(why.contains("not a regular file"), "{why}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

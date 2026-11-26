@@ -8,20 +8,21 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, TitleBar};
 use gpui_kit::{
     AnyElement, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, ParentElement as _, PathPromptOptions, Render, StatefulInteractiveElement as _,
-    Styled as _, Subscription, TestSupportExt as _, Window, div,
+    IntoElement, ParentElement as _, PathPromptOptions, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
 };
 
 use crate::theme;
 use crate::viewer::OpenBoard;
 use crate::viewer::editor::BoardEditor;
 use crate::viewer::measure::GpuiMeasure;
-use crate::viewer::notice::Tickets;
+use crate::viewer::notice::{Tickets, clean, error_text};
 use crate::viewer::open::open_board;
 
 /// The window's only view, which also keeps the theme on the OS appearance.
 pub struct MainView {
     board: Option<Entity<BoardEditor>>,
+    error: Option<SharedString>,
     focus: FocusHandle,
     tickets: Tickets,
     _appearance: Subscription,
@@ -40,6 +41,7 @@ impl MainView {
         window.focus(&focus, cx);
         let mut view = MainView {
             board: None,
+            error: None,
             focus,
             tickets: Tickets::default(),
             _appearance: appearance,
@@ -51,15 +53,18 @@ impl MainView {
     }
 
     /// Opens the board at `path` in the background and shows it once it loads, unless a later
-    /// open has started meanwhile; a board that fails to open is reported on stderr.
+    /// open has started meanwhile. A board that fails to open keeps the shown one and says why
+    /// in the error banner; one that opens clears it.
     fn open(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let ticket = self.tickets.issue();
         let measure = Arc::new(GpuiMeasure::new(Arc::clone(cx.text_system())));
         cx.spawn(async move |this, cx| {
-            let shown = path.display().to_string();
             let opened = cx
                 .background_executor()
-                .spawn(async move { open_board(path, measure) })
+                .spawn({
+                    let path = path.clone();
+                    async move { open_board(path, measure) }
+                })
                 .await;
             // The window may have closed while the board loaded; then there is nothing to
             // show it in.
@@ -70,16 +75,18 @@ impl MainView {
                 match opened {
                     Ok(opened) => {
                         view.board = Some(cx.new(|cx| BoardEditor::new(opened, cx)));
-                        cx.notify();
+                        view.error = None;
                     }
-                    Err(e) => eprintln!("placemat: {shown}: {e}"),
+                    Err(e) => view.error = Some(error_text(&path, &e).into()),
                 }
+                cx.notify();
             });
         })
         .detach();
     }
 
-    /// Asks for one board file through the system dialog and opens it; a cancel does nothing.
+    /// Asks for one board file through the system dialog and opens it. A cancel or a dropped
+    /// reply does nothing; a dialog the platform cannot show is reported in the error banner.
     fn prompt_open(&mut self, cx: &mut Context<Self>) {
         let reply = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -88,15 +95,44 @@ impl MainView {
             prompt: Some("Open board".into()),
         });
         cx.spawn(async move |this, cx| {
-            let Ok(Ok(Some(paths))) = reply.await else {
-                return;
+            let path = match reply.await {
+                Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                Ok(Err(e)) => {
+                    let text = clean(&format!("Could not show the file dialog: {e}"));
+                    let _ = this.update(cx, |view, cx| {
+                        view.error = Some(text.into());
+                        cx.notify();
+                    });
+                    return;
+                }
+                Ok(Ok(None)) | Err(_) => None,
             };
-            let Some(path) = paths.into_iter().next() else {
+            let Some(path) = path else {
                 return;
             };
             let _ = this.update(cx, |view, cx| view.open(path, cx));
         })
         .detach();
+    }
+
+    /// The banner saying why the last open failed, while it stands.
+    fn error_banner(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let text = self.error.clone()?;
+        Some(
+            div()
+                .id("board-error")
+                .role(Role::Alert)
+                .aria_label(text.clone())
+                .test_support()
+                .flex_none()
+                .px_3()
+                .py_1()
+                .text_sm()
+                .bg(cx.theme().danger)
+                .text_color(cx.theme().danger_foreground)
+                .child(text)
+                .into_any_element(),
+        )
     }
 
     /// The open board's editor, or the empty state offering to open one while there is none.
@@ -141,6 +177,7 @@ impl Render for MainView {
             .bg(theme.background)
             .text_color(theme.foreground)
             .child(TitleBar::new())
+            .children(self.error_banner(cx))
             .child(
                 div()
                     .id("main")

@@ -4,9 +4,10 @@
 mod common;
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::{Pilot, find_node, fixture, launch_args, launch_with, leaves, node, segment};
+use placemat_core::board::{LoadError, OpenError, read_file};
 use serde_json::{Value, json};
 
 const RECT: [&str; 2] = ["shape-3kTq8wZp", "shape-7hWc4nRd"];
@@ -110,4 +111,63 @@ async fn a_second_open_replaces_the_first_from_either_focus() {
     pick(&pilot, &rect).await;
     let tree = tree_with(&pilot, "shape-3kTq8wZp").await;
     assert_eq!(shapes(&tree), set(&RECT));
+}
+
+/// Waits until element `id` is no longer visible.
+async fn gone(pilot: &Pilot, id: &str) {
+    pilot
+        .ok("wait", json!({"target": {"id": [id]}, "gone": true}))
+        .await;
+}
+
+/// A board whose rect node never closes, and where the loader places the error.
+fn broken(dir: &Path) -> (PathBuf, String) {
+    let path = dir.join("broken.board");
+    std::fs::write(
+        &path,
+        "placemat-board version=0\n\nrect \"a\" {\n    at 0 0\n",
+    )
+    .unwrap();
+    let at = match read_file(&path) {
+        Err(OpenError::Load(LoadError::Syntax { line, col, .. })) => {
+            format!("line {line}, column {col}")
+        }
+        other => panic!("the fixture must be a syntax error: {other:?}"),
+    };
+    (path, at)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_broken_board_shows_why_with_its_line_and_column() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let (path, at) = broken(dir.path());
+    let pilot = Pilot::start().await;
+    pilot.ok("launch", launch_with("headless", &[&path])).await;
+    let tree = tree_with(&pilot, "board-error").await;
+    let why = name(&tree, "board-error");
+    assert!(why.contains("broken.board") && why.contains(&at), "{why}");
+    node(&tree, "open-board");
+    assert!(find_node(&tree, "board").is_none(), "{tree}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_second_open_keeps_the_board_until_one_succeeds() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let pilot = Pilot::start().await;
+    let rect = fixture("canonical/rect.board");
+    pilot.ok("launch", launch_with("headless", &[&rect])).await;
+    pilot.ok("wait", json!({"target": {"id": ["board"]}})).await;
+    pilot.ok("key", json!({"keys": "ctrl-o"})).await;
+    pick(&pilot, dir.path()).await;
+    let tree = tree_with(&pilot, "board-error").await;
+    assert!(
+        name(&tree, "board-error").contains("not a regular file"),
+        "{tree}"
+    );
+    assert_eq!(shapes(&tree), set(&RECT), "the shown board stays");
+    pilot.ok("key", json!({"keys": "ctrl-o"})).await;
+    pick(&pilot, &fixture("canonical/ellipse.board")).await;
+    gone(&pilot, "board-error").await;
+    let tree = pilot.ok("tree", json!({})).await;
+    assert_eq!(shapes(&tree), set(&ELLIPSE));
 }

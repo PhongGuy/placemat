@@ -11,6 +11,7 @@ pub mod element;
 pub mod frame;
 pub mod input;
 pub mod measure;
+pub mod notice;
 pub mod open;
 pub mod paint;
 

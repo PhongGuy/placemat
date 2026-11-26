@@ -29,12 +29,14 @@ pub struct MainView {
     focus: FocusHandle,
     tickets: Tickets,
     _appearance: Subscription,
+    _focus_lost: Subscription,
 }
 
 impl MainView {
     /// The view for `window`, in the mode the OS asks for now and following its changes. It
-    /// takes the window's focus so the open key works before any click. With a `path`, the
-    /// board opens as `open` would open it.
+    /// takes the window's focus so the open key works before any click, and takes it back
+    /// whenever the focused element leaves the window. With a `path`, the board opens as `open`
+    /// would open it.
     pub fn new(window: &mut Window, path: Option<PathBuf>, cx: &mut Context<Self>) -> MainView {
         theme::follow(window.appearance(), window, cx);
         let appearance = cx.observe_window_appearance(window, |_, window, cx| {
@@ -42,6 +44,11 @@ impl MainView {
         });
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        // A replaced board drops its focus with it; without a focused element keys dispatch at
+        // the kit Root, outside this view's key context, so the open key would stop working.
+        let focus_lost = cx.on_focus_lost(window, |view, window, cx| {
+            window.focus(&view.focus, cx);
+        });
         let mut view = MainView {
             board: None,
             error: None,
@@ -50,6 +57,7 @@ impl MainView {
             focus,
             tickets: Tickets::default(),
             _appearance: appearance,
+            _focus_lost: focus_lost,
         };
         if let Some(path) = path {
             view.open(path, cx);

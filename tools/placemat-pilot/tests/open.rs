@@ -111,6 +111,14 @@ async fn a_second_open_replaces_the_first_from_either_focus() {
     pick(&pilot, &rect).await;
     let tree = tree_with(&pilot, "shape-3kTq8wZp").await;
     assert_eq!(shapes(&tree), set(&RECT));
+    // The focused board is gone with the replace; the key must still reach the window.
+    pilot.ok("key", json!({"keys": "ctrl-o"})).await;
+    let cancel = pilot.ok("pick_file", json!({"cancel": true})).await;
+    assert_eq!(
+        cancel["answered"],
+        json!("cancelled"),
+        "ctrl-o after a replace showed no dialog: {cancel}"
+    );
 }
 
 /// Waits until element `id` is no longer visible.

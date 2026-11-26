@@ -171,3 +171,44 @@ async fn a_failed_second_open_keeps_the_board_until_one_succeeds() {
     let tree = pilot.ok("tree", json!({})).await;
     assert_eq!(shapes(&tree), set(&ELLIPSE));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repaired_board_opens_with_a_dismissible_warnings_banner() {
+    let pilot = Pilot::start().await;
+    let path = fixture("repair/duplicate.board");
+    pilot.ok("launch", launch_with("headless", &[&path])).await;
+    let tree = tree_with(&pilot, "board-warnings").await;
+    let listed = name(&tree, "board-warnings");
+    assert!(
+        listed.contains("a1Xq") && listed.contains("renamed"),
+        "{listed}"
+    );
+    node(&tree, "board");
+    pilot
+        .ok(
+            "click",
+            json!({"target": {"id": ["board-warnings-dismiss"]}}),
+        )
+        .await;
+    gone(&pilot, "board-warnings").await;
+    node(&pilot.ok("tree", json!({})).await, "board");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_newer_board_opens_read_only_and_a_clean_open_clears_the_notes() {
+    let pilot = Pilot::start().await;
+    let path = fixture("readonly/newer.board");
+    pilot.ok("launch", launch_with("headless", &[&path])).await;
+    let tree = tree_with(&pilot, "board-readonly").await;
+    assert!(
+        name(&tree, "board-readonly").contains("made by a newer Placemat"),
+        "{tree}"
+    );
+    node(&tree, "board");
+    pilot.ok("key", json!({"keys": "ctrl-o"})).await;
+    pick(&pilot, &fixture("canonical/rect.board")).await;
+    gone(&pilot, "board-readonly").await;
+    let tree = pilot.ok("tree", json!({})).await;
+    assert!(find_node(&tree, "board-warnings").is_none(), "{tree}");
+    assert_eq!(shapes(&tree), set(&RECT));
+}

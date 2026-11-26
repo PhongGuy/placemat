@@ -5,24 +5,27 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, TitleBar};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, TitleBar};
 use gpui_kit::{
-    AnyElement, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, ParentElement as _, PathPromptOptions, Render, Role, SharedString,
+    AnyElement, AppContext as _, Context, Div, Entity, FocusHandle, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, PathPromptOptions, Render, Role, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
 };
+use placemat_core::board::Access;
 
 use crate::theme;
 use crate::viewer::OpenBoard;
 use crate::viewer::editor::BoardEditor;
 use crate::viewer::measure::GpuiMeasure;
-use crate::viewer::notice::{Tickets, clean, error_text};
+use crate::viewer::notice::{Tickets, clean, error_text, readonly_text, warnings_text};
 use crate::viewer::open::open_board;
 
 /// The window's only view, which also keeps the theme on the OS appearance.
 pub struct MainView {
     board: Option<Entity<BoardEditor>>,
     error: Option<SharedString>,
+    warnings: Option<SharedString>,
+    readonly: Option<SharedString>,
     focus: FocusHandle,
     tickets: Tickets,
     _appearance: Subscription,
@@ -42,6 +45,8 @@ impl MainView {
         let mut view = MainView {
             board: None,
             error: None,
+            warnings: None,
+            readonly: None,
             focus,
             tickets: Tickets::default(),
             _appearance: appearance,
@@ -53,8 +58,8 @@ impl MainView {
     }
 
     /// Opens the board at `path` in the background and shows it once it loads, unless a later
-    /// open has started meanwhile. A board that fails to open keeps the shown one and says why
-    /// in the error banner; one that opens clears it.
+    /// open has started meanwhile. A board that fails to open keeps the shown one and its notes
+    /// and says why in the error banner; one that opens clears the error and shows its own notes.
     fn open(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let ticket = self.tickets.issue();
         let measure = Arc::new(GpuiMeasure::new(Arc::clone(cx.text_system())));
@@ -74,6 +79,11 @@ impl MainView {
                 }
                 match opened {
                     Ok(opened) => {
+                        view.warnings = warnings_text(&opened.loaded.warnings).map(Into::into);
+                        view.readonly = match opened.loaded.access {
+                            Access::ReadOnly { found } => Some(readonly_text(found).into()),
+                            Access::ReadWrite | _ => None,
+                        };
                         view.board = Some(cx.new(|cx| BoardEditor::new(opened, cx)));
                         view.error = None;
                     }
@@ -118,21 +128,57 @@ impl MainView {
     /// The banner saying why the last open failed, while it stands.
     fn error_banner(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let text = self.error.clone()?;
-        Some(
-            div()
-                .id("board-error")
-                .role(Role::Alert)
-                .aria_label(text.clone())
-                .test_support()
-                .flex_none()
-                .px_3()
-                .py_1()
-                .text_sm()
-                .bg(cx.theme().danger)
-                .text_color(cx.theme().danger_foreground)
-                .child(text)
-                .into_any_element(),
+        let theme = cx.theme();
+        let row = banner(
+            "board-error",
+            Role::Alert,
+            &text,
+            theme.danger,
+            theme.danger_foreground,
+        );
+        Some(row.test_support().into_any_element())
+    }
+
+    /// The note that the shown board is read-only because a newer Placemat made it.
+    fn readonly_banner(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let text = self.readonly.clone()?;
+        let theme = cx.theme();
+        let row = banner(
+            "board-readonly",
+            Role::Status,
+            &text,
+            theme.info,
+            theme.info_foreground,
+        );
+        Some(row.test_support().into_any_element())
+    }
+
+    /// What the load repaired in the shown board, one repair per row, until dismissed.
+    fn warnings_banner(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let text = self.warnings.clone()?;
+        let theme = cx.theme();
+        let row = banner(
+            "board-warnings",
+            Role::Status,
+            &text,
+            theme.warning,
+            theme.warning_foreground,
         )
+        .flex()
+        .items_start()
+        .justify_between()
+        .gap_2()
+        .child(
+            Button::new("board-warnings-dismiss")
+                .ghost()
+                .small()
+                .label("Dismiss")
+                .on_click(cx.listener(|view, _, _, cx| {
+                    view.warnings = None;
+                    cx.notify();
+                })),
+        );
+        Some(row.test_support().into_any_element())
     }
 
     /// The open board's editor, or the empty state offering to open one while there is none.
@@ -178,6 +224,8 @@ impl Render for MainView {
             .text_color(theme.foreground)
             .child(TitleBar::new())
             .children(self.error_banner(cx))
+            .children(self.readonly_banner(cx))
+            .children(self.warnings_banner(cx))
             .child(
                 div()
                     .id("main")
@@ -189,4 +237,25 @@ impl Render for MainView {
                     .child(self.content(cx)),
             )
     }
+}
+
+/// A full-width banner row named `id` whose accessible name is `text`, shown one line per row
+/// so long notes wrap inside the window rather than clip. The caller adds `test_support` last.
+fn banner(id: &'static str, role: Role, text: &SharedString, bg: Hsla, fg: Hsla) -> Stateful<Div> {
+    div()
+        .id(id)
+        .role(role)
+        .aria_label(text.clone())
+        .flex_none()
+        .px_3()
+        .py_1()
+        .text_sm()
+        .bg(bg)
+        .text_color(fg)
+        .child(
+            div().flex_1().min_w_0().flex().flex_col().children(
+                text.lines()
+                    .map(|line| div().child(SharedString::from(line.to_owned()))),
+            ),
+        )
 }

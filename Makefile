@@ -8,7 +8,7 @@ JOBS ?= 4
 LOCKED :=
 
 .DEFAULT_GOAL := run
-.PHONY: run check advisories fmt fmt-check lint test pilot-check pilot-perf icons-check notices-check script-test package clean workflows-lint
+.PHONY: run check advisories fmt fmt-check lint test pilot-check pilot-check-ci pilot-perf icons-check notices-check script-test package clean workflows-lint
 
 run:
 	CARGO_BUILD_JOBS="$(JOBS)" $(CARGO) run -p placemat-app
@@ -37,11 +37,16 @@ test:
 
 # The pilot package sits outside the workspace, with its own lock, so the gate never builds it.
 PILOT := --manifest-path tools/placemat-pilot/Cargo.toml
-pilot-check:
+# CI runs the scenarios lavapipe can bound; the local gate adds the ignored board scenarios,
+# which need a real GPU. The ignored perf scenario stays with pilot-perf.
+pilot-check-ci:
 	$(CARGO) fmt --check $(PILOT)
 	$(CARGO) clippy $(LOCKED) $(PILOT) --all-targets --all-features -- -Dwarnings
 	$(CARGO) build $(LOCKED) -p placemat-app --bin placemat --profile timing
 	env -u WAYLAND_DISPLAY -u DISPLAY $(CARGO) test $(LOCKED) $(PILOT) -- --show-output
+
+pilot-check: pilot-check-ci
+	env -u WAYLAND_DISPLAY -u DISPLAY $(CARGO) test $(LOCKED) $(PILOT) --test board -- --ignored --show-output
 
 # Frame cost of the board canvas on this machine's GPU, never in CI: the timing app for the
 # session step, then the ignored perf scenario, which fails only on the frame gate.

@@ -4,12 +4,13 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui_kit::{
-    Bounds, Context, FocusHandle, InteractiveElement as _, IntoElement, Pixels, Render,
-    Styled as _, TestSupportExt as _, Window, div,
+    Bounds, Context, FocusHandle, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
+    Render, Styled as _, TestSupportExt as _, Window, div,
 };
 use placemat_core::board::Board;
 use placemat_core::scene::Camera;
 
+use crate::viewer::element::BoardElement;
 use crate::viewer::open::OpenedBoard;
 
 /// The view state the editor shares with the canvas element, which fits the camera once it
@@ -19,7 +20,6 @@ pub(crate) struct ViewState {
     /// The camera; None until the first frame fits the board to the canvas.
     pub(crate) camera: Cell<Option<Camera>>,
     /// The canvas bounds from the last frame, None before the first.
-    #[expect(dead_code, reason = "the canvas element writes and reads it")]
     pub(crate) canvas: Cell<Option<Bounds<Pixels>>>,
 }
 
@@ -71,5 +71,9 @@ impl Render for BoardEditor {
             .track_focus(&self.focus)
             .key_context("BoardEditor")
             .size_full()
+            .child(BoardElement::new(
+                Rc::clone(&self.opened),
+                Rc::clone(&self.view),
+            ))
     }
 }

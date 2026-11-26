@@ -20,6 +20,7 @@ gpui-pilot-host = { git = "https://github.com/PhongGuy/gpui-pilot", tag = "v0.9.
 anyhow = "1"
 
 [dev-dependencies]
+placemat-core = { path = "../../crates/placemat-core" }
 rmcp = { version = "=3.11.0", default-features = false, features = ["client", "transport-child-process"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "sync", "time"] }
 serde_json = "1"

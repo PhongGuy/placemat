@@ -5525,6 +5525,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pilot-host",
  "placemat-app",
+ "placemat-core",
  "rmcp",
  "serde_json",
  "tempfile",

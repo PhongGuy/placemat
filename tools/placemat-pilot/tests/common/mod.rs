@@ -155,3 +155,37 @@ pub fn find_node<'a>(tree: &'a Value, id: &str) -> Option<&'a Value> {
 pub fn node<'a>(tree: &'a Value, id: &str) -> &'a Value {
     find_node(tree, id).unwrap_or_else(|| panic!("no {id} in the tree: {tree}"))
 }
+
+/// A node's logical bounds as (x, y, w, h).
+pub fn rect(n: &Value) -> (f64, f64, f64, f64) {
+    let b = &n["bounds"];
+    let f = |k: &str| {
+        b[k].as_f64()
+            .unwrap_or_else(|| panic!("no bounds.{k}: {n}"))
+    };
+    (f("x"), f("y"), f("w"), f("h"))
+}
+
+/// The last path segment of a node, or "" for a numeric one.
+pub fn segment(n: &Value) -> &str {
+    n["path"]
+        .as_array()
+        .and_then(|p| p.last())
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
+/// The canvas leaves, in the tree's order: pilot sorts by top, then left, never by push order.
+pub fn leaves(tree: &Value) -> Vec<&Value> {
+    tree["nodes"]
+        .as_array()
+        .expect("tree nodes")
+        .iter()
+        .filter(|n| segment(n).starts_with("shape-"))
+        .collect()
+}
+
+/// Whether two (x, y, w, h) boxes share a point.
+pub fn meets(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
+    a.0 <= b.0 + b.2 && b.0 <= a.0 + a.2 && a.1 <= b.1 + b.3 && b.1 <= a.1 + a.3
+}

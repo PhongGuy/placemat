@@ -81,7 +81,7 @@ fn the_pilot_workspace_pins_its_host_tag_and_optimises_its_dependencies() {
     let manifest: toml::Table = toml::from_str(&text).unwrap();
     assert_eq!(
         manifest["dependencies"]["gpui-pilot-host"]["tag"].as_str(),
-        Some("v0.9.5")
+        Some("v0.10.0")
     );
     assert_eq!(
         manifest["profile"]["dev"]["package"]["*"]["opt-level"].as_integer(),
@@ -103,8 +103,8 @@ fn ci_installs_the_server_at_the_commit_the_host_is_locked_to() {
         .trim_end_matches('"')
         .split_once('#')
         .unwrap();
-    assert_eq!(tag, "v0.9.5");
-    assert_eq!(rev, "0f68de7aefbf2f9ddc76e1e20b87e7bb559ffcd1");
+    assert_eq!(tag, "v0.10.0");
+    assert_eq!(rev, "b2ec1c64ed971d85c490b24daac49c678467dfa1");
     let ci = std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).unwrap();
     assert!(
         ci.contains(&format!("# gpui-pilot {tag} (gpui-kit 0.11.0)")),

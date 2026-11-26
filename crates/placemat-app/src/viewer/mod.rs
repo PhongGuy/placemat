@@ -1,4 +1,5 @@
-//! The board viewer: opening a board file off the UI thread and measuring its text with GPUI.
+//! The board viewer: a board file opened off the UI thread and shown on a pan-and-zoom canvas
+//! that paints each visible shape hand-drawn and publishes one accessibility leaf per shape.
 
 use std::rc::Rc;
 

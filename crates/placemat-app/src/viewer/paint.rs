@@ -115,14 +115,15 @@ pub fn walk(ops: &[Op], origin: (f64, f64), camera: Camera, scale: f64) -> Walk 
 /// `scale`: enough to stay within about 1.5 device pixels, at most 32.
 pub fn cubic_segments(p: [(f32, f32); 4], scale: f64) -> u32 {
     // n lines stray at most |B''| / (8 n^2) = 6 |d| / (8 n^2), |d| the larger second difference.
-    // n solves |d| / (8 n^2) = 0.25 without the 6, so the bound is 1.5 px; pricing relies on it.
-    const TOLERANCE_PX: f64 = 0.25;
+    // n solves |d| / (8 n^2) = TAU without the 6, so the bound is 6 TAU = 1.5 px; pricing
+    // relies on it. TAU is that curvature parameter, not a tolerance in pixels.
+    const TAU: f64 = 0.25;
     let [a, b, c, e] = p.map(|(x, y)| (f64::from(x) * scale, f64::from(y) * scale));
     let second = |p: (f64, f64), q: (f64, f64), r: (f64, f64)| {
         (p.0 - 2.0 * q.0 + r.0).hypot(p.1 - 2.0 * q.1 + r.1)
     };
     let d = second(a, b, c).max(second(b, c, e));
-    let n = (d / (8.0 * TOLERANCE_PX)).sqrt().ceil();
+    let n = (d / (8.0 * TAU)).sqrt().ceil();
     if n.is_finite() {
         n.clamp(1.0, 32.0) as u32
     } else {

@@ -129,7 +129,9 @@ async fn a_drag_pans_the_canvas_and_the_fit_key_brings_it_back() {
             launch_with("headless", &[&fixture("perf/grid-1000.board")]),
         )
         .await;
-    let tree = pilot.ok("tree", json!({})).await;
+    let tree = pilot
+        .ok("tree", json!({"wait_for": {"id": ["board"]}}))
+        .await;
     let board = rect(node(&tree, "board"));
     let before = boxes(&tree);
     let (cx, cy) = centre(board);
@@ -184,7 +186,9 @@ async fn the_wheel_zooms_about_the_cursor_and_shift_wheel_pans() {
             launch_with("headless", &[&fixture("perf/grid-1000.board")]),
         )
         .await;
-    let tree = pilot.ok("tree", json!({})).await;
+    let tree = pilot
+        .ok("tree", json!({"wait_for": {"id": ["board"]}}))
+        .await;
     let (cx, cy) = centre(rect(node(&tree, "board")));
     let before = boxes(&tree);
     let dist = |b: &Bx| (centre(*b).0 - cx).powi(2) + (centre(*b).1 - cy).powi(2);

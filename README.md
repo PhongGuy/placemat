@@ -14,6 +14,8 @@ You need Rust 1.99 or newer, a C compiler, and on Linux the system libraries lis
 
 That builds and opens the app, the same as `cargo run -p placemat-app`. `cargo build --release` puts the `placemat` binary in `target/release`.
 
+`make install` puts `placemat` in `~/.cargo/bin` (or `PREFIX=<dir>` for `<dir>/bin`) and, on Linux, adds a desktop entry and icons under `~/.local/share`. `make uninstall` removes them.
+
 ## Contributing
 
 Issues and pull requests from anyone are welcome, first ones included, and I'll help get a pull request over the line. Building from source, the layout, the checks, CI, the conventions for issues and pull requests, and the gpui-pilot setup are in [CONTRIBUTING.md](CONTRIBUTING.md).

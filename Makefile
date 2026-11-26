@@ -8,10 +8,18 @@ JOBS ?= 4
 LOCKED :=
 
 .DEFAULT_GOAL := run
-.PHONY: run check advisories fmt fmt-check lint test pilot-check pilot-check-ci pilot-perf icons-check notices-check script-test package clean workflows-lint
+.PHONY: run install uninstall check advisories fmt fmt-check lint test pilot-check pilot-check-ci pilot-perf icons-check notices-check script-test package clean workflows-lint
 
 run:
 	CARGO_BUILD_JOBS="$(JOBS)" $(CARGO) run -p placemat-app
+
+# The placemat binary through cargo install, plus a desktop entry and icons on Linux.
+# PREFIX becomes cargo's --root.
+install:
+	CARGO="$(CARGO)" JOBS="$(JOBS)" PLACEMAT_PREFIX="$(PREFIX)" scripts/install.sh install
+
+uninstall:
+	CARGO="$(CARGO)" PLACEMAT_PREFIX="$(PREFIX)" scripts/install.sh uninstall
 
 check: advisories fmt-check lint test
 

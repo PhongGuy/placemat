@@ -112,10 +112,10 @@ pub fn walk(ops: &[Op], origin: (f64, f64), camera: Camera, scale: f64) -> Walk 
 }
 
 /// How many lines a stroked cubic with these canvas-pixel control points is flattened into at
-/// `scale`: enough to stay within a quarter device pixel, at most 32.
+/// `scale`: enough to stay within about 1.5 device pixels, at most 32.
 pub fn cubic_segments(p: [(f32, f32); 4], scale: f64) -> u32 {
-    // A cubic cut into n lines strays at most |d| / (8 n^2) from them, |d| its larger second
-    // difference; solve for a quarter device pixel.
+    // n lines stray at most |B''| / (8 n^2) = 6 |d| / (8 n^2), |d| the larger second difference.
+    // n solves |d| / (8 n^2) = 0.25 without the 6, so the bound is 1.5 px; pricing relies on it.
     const TOLERANCE_PX: f64 = 0.25;
     let [a, b, c, e] = p.map(|(x, y)| (f64::from(x) * scale, f64::from(y) * scale));
     let second = |p: (f64, f64), q: (f64, f64), r: (f64, f64)| {

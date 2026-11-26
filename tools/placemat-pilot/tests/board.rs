@@ -214,11 +214,12 @@ async fn the_wheel_zooms_about_the_cursor_and_shift_wheel_pans() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn the_limits_board_paints_at_full_zoom_on_a_double_scale_display() {
+/// Opens `board` at scale 2, screenshots it at fit and at full zoom, and returns the tree
+/// read at fit.
+async fn paint_at_fit_and_full_zoom(board: &placemat_core::board::Board) -> Value {
     let dir = tempfile::TempDir::new().unwrap();
-    let path = dir.path().join("limits.board");
-    let text = placemat_core::board::write(&board_util::limits_board()).unwrap();
+    let path = dir.path().join("big.board");
+    let text = placemat_core::board::write(board).unwrap();
     std::fs::write(&path, text).unwrap();
     let pilot = Pilot::start().await;
     let mut args = launch_with("headless", &[&path]);
@@ -234,7 +235,8 @@ async fn the_limits_board_paints_at_full_zoom_on_a_double_scale_display() {
     pilot
         .ok("screenshot", json!({"save_to": dir.path().join("fit.png")}))
         .await;
-    let (cx, cy) = centre(rect(node(&pilot.ok("tree", json!({})).await, "board")));
+    let fit = pilot.ok("tree", json!({})).await;
+    let (cx, cy) = centre(rect(node(&fit, "board")));
     // 1.1^60 is far past 30, so the zoom ends clamped at Camera::MAX_ZOOM.
     pilot
         .ok(
@@ -251,4 +253,24 @@ async fn the_limits_board_paints_at_full_zoom_on_a_double_scale_display() {
     let tree = pilot.ok("tree", json!({})).await;
     assert_eq!(tree["settled"], json!(true), "{tree}");
     node(&tree, "board");
+    fit
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_limits_board_paints_at_full_zoom_on_a_double_scale_display() {
+    let board = board_util::limits_board();
+    let fit = paint_at_fit_and_full_zoom(&board).await;
+    // The budget leaves most labels unpainted at fit; the leaf still names the arrow.
+    let first = board
+        .paint_order()
+        .find(|e| matches!(e.kind, placemat_core::board::Kind::Arrow(_)))
+        .unwrap();
+    let id = format!("shape-{}", first.id.as_str());
+    let leaf = *leaves(&fit).iter().find(|n| segment(n) == id).unwrap();
+    assert_eq!(leaf["name"], json!("a".repeat(105)), "{leaf}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_stacked_hachure_board_paints_at_fit_and_full_zoom() {
+    paint_at_fit_and_full_zoom(&board_util::stacked_hachure_board()).await;
 }

@@ -24,6 +24,8 @@ pub(crate) struct ViewState {
     pub(crate) camera: Cell<Option<Camera>>,
     /// The canvas bounds from the last frame, None before the first.
     pub(crate) canvas: Cell<Option<Bounds<Pixels>>>,
+    /// Whether the last frame's budget cut any detail or label.
+    pub(crate) budget_hit: Cell<bool>,
 }
 
 /// A board opened in the window, viewed through a pan-and-zoom camera.

@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use gpui_kit::{App, KeyBinding, KeyBindingContextPredicate, actions};
 
+pub mod budget;
 pub mod editor;
 pub mod element;
 pub mod frame;

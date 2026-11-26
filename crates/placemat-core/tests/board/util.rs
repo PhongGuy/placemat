@@ -266,3 +266,24 @@ pub fn limits_board() -> Board {
     }
     b
 }
+
+/// Boxes stacked at one spot, each as large as a box may be, hachured and dashed: the most
+/// path work a board within the limits can put under one pixel.
+pub fn stacked_hachure_board() -> Board {
+    let side = 1 << 24;
+    let mut b = Board::new();
+    for i in 0..STACKED_BOXES {
+        let mut body = Boxed::new(Point::new(-side / 2, -side / 2), Size::new(side, side));
+        body.fill = Fill::Colour {
+            colour: Colour::rgb(0xa5, 0xd8, 0xff),
+            style: FillStyle::Hachure,
+        };
+        let mut e = el(&format!("s{i:04}"), 1 + i as u32, "a1", Kind::Rect(body));
+        e.stroke.dash = Dash::Dashed;
+        b.insert(e).unwrap();
+    }
+    b
+}
+
+/// How many boxes `stacked_hachure_board` stacks.
+pub const STACKED_BOXES: usize = 100;

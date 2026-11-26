@@ -173,6 +173,7 @@ impl MainView {
                 .ghost()
                 .small()
                 .label("Dismiss")
+                .text_color(theme.warning_foreground)
                 .on_click(cx.listener(|view, _, _, cx| {
                     view.warnings = None;
                     cx.notify();

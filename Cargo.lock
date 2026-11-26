@@ -5331,6 +5331,7 @@ dependencies = [
  "image",
  "placemat-core",
  "rust-embed",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

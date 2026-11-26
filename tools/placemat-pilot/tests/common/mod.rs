@@ -4,6 +4,7 @@
 
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use rmcp::service::RunningService;
@@ -85,15 +86,19 @@ impl Pilot {
         let Value::Object(args) = args else {
             panic!("arguments must be an object")
         };
+        // Every call logs its wall time, so CI's output sizes the reply windows from evidence.
+        let start = Instant::now();
         let result = self
             .client
             .call_tool(CallToolRequestParams::new(tool.to_owned()).with_arguments(args))
-            .await
-            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+            .await;
+        let ms = start.elapsed().as_millis();
+        eprintln!("pilot {tool}: {ms} ms");
+        let result = result.unwrap_or_else(|e| panic!("{tool} after {ms} ms: {e}"));
         assert_ne!(
             result.is_error,
             Some(true),
-            "{tool} failed: {:?} {:?}",
+            "{tool} failed after {ms} ms: {:?} {:?}",
             result.structured_content,
             result.content
         );
@@ -120,6 +125,26 @@ pub fn launch_args(mode: &str) -> Value {
     json!({ "mode": mode, "build": false, "width": 1280, "height": 800, "scale": 1.0 })
 }
 
+/// A board fixture from placemat-core, as an absolute path.
+pub fn fixture(rel: &str) -> PathBuf {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/placemat-core/tests/fixtures/boards")
+        .join(rel);
+    std::fs::canonicalize(&path).unwrap_or(path)
+}
+
+/// `launch_args(mode)` with `paths` passed to the app.
+pub fn launch_with(mode: &str, paths: &[&Path]) -> Value {
+    let mut args = launch_args(mode);
+    args["args"] = json!(
+        paths
+            .iter()
+            .map(|p| p.to_str().unwrap())
+            .collect::<Vec<_>>()
+    );
+    args
+}
+
 /// The tree node for element `id`, if any: a session node carries it as `id`, a headless
 /// node as the last segment of its `path`.
 pub fn find_node<'a>(tree: &'a Value, id: &str) -> Option<&'a Value> {
@@ -134,4 +159,38 @@ pub fn find_node<'a>(tree: &'a Value, id: &str) -> Option<&'a Value> {
 
 pub fn node<'a>(tree: &'a Value, id: &str) -> &'a Value {
     find_node(tree, id).unwrap_or_else(|| panic!("no {id} in the tree: {tree}"))
+}
+
+/// A node's logical bounds as (x, y, w, h).
+pub fn rect(n: &Value) -> (f64, f64, f64, f64) {
+    let b = &n["bounds"];
+    let f = |k: &str| {
+        b[k].as_f64()
+            .unwrap_or_else(|| panic!("no bounds.{k}: {n}"))
+    };
+    (f("x"), f("y"), f("w"), f("h"))
+}
+
+/// The last path segment of a node, or "" for a numeric one.
+pub fn segment(n: &Value) -> &str {
+    n["path"]
+        .as_array()
+        .and_then(|p| p.last())
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
+/// The canvas leaves, in the tree's order: pilot sorts by top, then left, never by push order.
+pub fn leaves(tree: &Value) -> Vec<&Value> {
+    tree["nodes"]
+        .as_array()
+        .expect("tree nodes")
+        .iter()
+        .filter(|n| segment(n).starts_with("shape-"))
+        .collect()
+}
+
+/// Whether two (x, y, w, h) boxes share a point.
+pub fn meets(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
+    a.0 <= b.0 + b.2 && b.0 <= a.0 + a.2 && a.1 <= b.1 + b.3 && b.1 <= a.1 + a.3
 }

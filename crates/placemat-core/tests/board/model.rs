@@ -92,3 +92,13 @@ fn z_keys_compare_by_bytes() {
     let got: Vec<&str> = keys.iter().map(ZKey::as_str).collect();
     assert_eq!(got, ["9", "Z", "a", "a01", "a1", "b"]);
 }
+
+#[test]
+fn colour_channels_give_alpha_255_when_none_is_stored() {
+    assert_eq!(Colour::rgb(1, 2, 3).channels(), [1, 2, 3, 255]);
+    assert_eq!(Colour::rgba(1, 2, 3, 4).channels(), [1, 2, 3, 4]);
+    assert_eq!(
+        Colour::parse("#a5d8ff80").map(Colour::channels),
+        Some([0xa5, 0xd8, 0xff, 0x80])
+    );
+}

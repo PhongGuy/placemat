@@ -16,8 +16,6 @@ name = "placemat"
 path = "src/main.rs"
 
 [dependencies]
-# Unused in code so far: linking it runs its build script, which refuses a release build
-# that trusts no real update key.
 placemat-core = { path = "../placemat-core" }
 gpui-kit.workspace = true
 thiserror.workspace = true
@@ -26,6 +24,9 @@ thiserror.workspace = true
 rust-embed = { version = "=8.14.0", features = ["debug-embed"] }
 # Same version gpui links, so `RgbaImage` is the type `WindowOptions.icon` takes.
 image = { version = "=0.25.10", default-features = false, features = ["png", "gif", "jpeg", "webp", "bmp"] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [package.metadata.packager]
 productName = "Placemat"

@@ -81,12 +81,36 @@ fn the_pilot_workspace_pins_its_host_tag_and_optimises_its_dependencies() {
     let manifest: toml::Table = toml::from_str(&text).unwrap();
     assert_eq!(
         manifest["dependencies"]["gpui-pilot-host"]["tag"].as_str(),
-        Some("v0.8.0")
+        Some("v0.9.3")
     );
     assert_eq!(
         manifest["profile"]["dev"]["package"]["*"]["opt-level"].as_integer(),
         Some(3)
     );
+}
+
+#[test]
+fn ci_installs_the_server_at_the_commit_the_host_is_locked_to() {
+    let lock =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock")).unwrap();
+    let prefix = "source = \"git+https://github.com/PhongGuy/gpui-pilot?tag=";
+    let source = lock
+        .lines()
+        .find(|l| l.starts_with(prefix))
+        .expect("the host comes from the gpui-pilot repository");
+    let (tag, rev) = source
+        .trim_start_matches(prefix)
+        .trim_end_matches('"')
+        .split_once('#')
+        .unwrap();
+    assert_eq!(tag, "v0.9.3");
+    assert_eq!(rev, "7bbdd5316537bd7322dd37beb1b3907078f881ec");
+    let ci = std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).unwrap();
+    assert!(
+        ci.contains(&format!("# gpui-pilot {tag} (gpui-kit 0.11.0)")),
+        "the CI comment names {tag}"
+    );
+    assert!(ci.contains(&format!("--rev {rev}")), "CI installs {rev}");
 }
 
 #[test]

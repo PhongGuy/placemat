@@ -157,6 +157,16 @@ impl Colour {
         let alpha = if hex.len() == 8 { Some(byte(6)?) } else { None };
         Some(Self { rgb, alpha })
     }
+
+    /// `[r, g, b, a]`, alpha 255 when the colour has none.
+    pub const fn channels(self) -> [u8; 4] {
+        let [r, g, b] = self.rgb;
+        let a = match self.alpha {
+            Some(a) => a,
+            None => 255,
+        };
+        [r, g, b, a]
+    }
 }
 
 impl fmt::Display for Colour {

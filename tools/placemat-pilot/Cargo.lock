@@ -2735,8 +2735,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pilot-host"
-version = "0.8.0"
-source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.8.0#85b686b823dbbc51b6ac009958c87c4d000dd3f4"
+version = "0.9.3"
+source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.9.3#7bbdd5316537bd7322dd37beb1b3907078f881ec"
 dependencies = [
  "anyhow",
  "async-task",
@@ -2750,8 +2750,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pilot-protocol"
-version = "0.8.0"
-source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.8.0#85b686b823dbbc51b6ac009958c87c4d000dd3f4"
+version = "0.9.3"
+source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.9.3#7bbdd5316537bd7322dd37beb1b3907078f881ec"
 dependencies = [
  "serde",
  "serde_json",
@@ -5525,6 +5525,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pilot-host",
  "placemat-app",
+ "placemat-core",
  "rmcp",
  "serde_json",
  "tempfile",

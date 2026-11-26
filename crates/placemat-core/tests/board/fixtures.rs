@@ -3,7 +3,10 @@
 use placemat_core::board::{Access, Board, LIMITS, Warning, WriteError, load, write};
 
 use crate::boardgen;
-use crate::util::{all_kinds_board, fixture, limit, limits_board, rect};
+use crate::util::{
+    STACKED_BOXES, all_kinds_board, extremes_board, fixture, limit, limits_board, rect,
+    stacked_hachure_board, stacked_hachure_boxes,
+};
 
 const CANONICAL: [&str; 10] = [
     "arrow", "diamond", "ellipse", "empty", "escapes", "freedraw", "line", "rect", "text",
@@ -98,4 +101,22 @@ fn a_board_at_every_limit_stays_under_the_hard_cap_and_reopens() {
         [Warning::OverTeamLimit { bytes: text.len() }]
     );
     assert_eq!(again.board, b);
+}
+
+#[test]
+fn the_stacked_hachure_board_is_within_the_limits_and_reopens() {
+    let b = stacked_hachure_board();
+    assert_eq!(b.len(), STACKED_BOXES, "every box went in");
+    let again = load(write(&b).unwrap().as_bytes()).unwrap();
+    assert_eq!(again.warnings, [], "a valid board loads clean");
+    assert_eq!(again.board, b, "it round-trips");
+    let small = stacked_hachure_boxes(1000);
+    assert_eq!(small.len(), STACKED_BOXES, "every small box went in");
+}
+
+#[test]
+fn the_extremes_board_is_within_the_limits_and_reopens() {
+    let b = extremes_board();
+    let again = load(write(&b).unwrap().as_bytes()).unwrap();
+    assert_eq!(again.board, b, "it round-trips");
 }

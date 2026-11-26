@@ -1,5 +1,6 @@
 //! Startup: the main window's options and opening it.
 
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use gpui_kit::component::TitleBar;
@@ -49,13 +50,13 @@ pub fn window_options() -> WindowOptions {
     }
 }
 
-/// Opens the main window. The caller has run `gpui_kit::init` and
-/// `theme::install`.
-pub fn start(cx: &mut App) -> gpui_kit::Result<AnyWindowHandle> {
+/// Opens the main window, opening the board at `path` into it when one is named. The caller
+/// has run `gpui_kit::init` and `theme::install`.
+pub fn start(cx: &mut App, path: Option<PathBuf>) -> gpui_kit::Result<AnyWindowHandle> {
     let (window, _) = gpui_kit::open_window(window_options(), cx, |window, cx| {
         // X11 takes its window class only from this call, never from the options' app id.
         window.set_app_id(APP_ID);
-        cx.new(|cx| MainView::new(window, cx))
+        cx.new(|cx| MainView::new(window, path, cx))
     })?;
     Ok(window)
 }

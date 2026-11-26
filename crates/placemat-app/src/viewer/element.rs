@@ -4,6 +4,7 @@
 use std::rc::Rc;
 
 use gpui_kit::accesskit::{self, Role};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
     A11ySubtreeBuilder, App, Bounds, ContentMask, Element, ElementId, GlobalElementId, Hsla,
     InspectorElementId, LayoutId, LineJoin, Path, PathBuilder, PathStyle, Pixels, Point, Rgba,
@@ -12,7 +13,8 @@ use gpui_kit::{
 };
 use placemat_core::board::{Align, Board, Element as BoardItem, Fill, Kind, Stroke};
 use placemat_core::scene::{
-    Camera, Detail, Label, Op, OpSet, Rect, Scene, SetKind, Visible, dash_array, label_px,
+    Camera, Detail, Label, LabelLine, Op, OpSet, Rect, Scene, SetKind, Visible, dash_array,
+    label_px,
 };
 
 use crate::viewer::budget::{
@@ -99,7 +101,7 @@ impl Element for BoardElement {
         bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) -> Frame {
         // The first frame to learn the canvas size fits the board to it; later frames keep
         // whatever camera the editor holds.
@@ -124,6 +126,10 @@ impl Element for BoardElement {
             camera,
             viewport,
             scale,
+            tags: TagColours {
+                fg: cx.theme().muted_foreground,
+                bg: cx.theme().muted,
+            },
         };
         let planned = plan(&self.opened.scene, board, view);
         let hit = planned.iter().any(|p| !whole(&p.cost, &p.grant));
@@ -171,7 +177,10 @@ impl Element for BoardElement {
                             align,
                             width,
                         } = *text;
-                        // A line that fails to paint leaves a gap; the frame goes on.
+                        // Tag backgrounds go down first, under the glyphs; a line that fails
+                        // to paint leaves a gap and the frame goes on.
+                        line.paint_background(origin, line_height, align, Some(width), window, cx)
+                            .ok();
                         line.paint(origin, line_height, align, Some(width), window, cx)
                             .ok();
                     }
@@ -254,6 +263,14 @@ struct View {
     camera: Camera,
     viewport: (f64, f64),
     scale: f64,
+    tags: TagColours,
+}
+
+/// The colours a tag paints in: muted text on a muted background.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct TagColours {
+    fg: Hsla,
+    bg: Hsla,
 }
 
 /// Culls the scene through the camera, prices each visible element and grants it what the
@@ -435,9 +452,7 @@ fn build(
             | Kind::Freedraw(_)
             | _ => TextAlign::Center,
         };
-        label_lines(
-            draws, label, align, &stroke, v.origin, camera, corner, window,
-        );
+        label_lines(draws, label, align, &stroke, v.origin, view, corner, window);
     }
 }
 
@@ -527,10 +542,11 @@ fn label_lines(
     align: TextAlign,
     stroke: &Stroke,
     origin: (f64, f64),
-    camera: Camera,
+    view: View,
     corner: (f32, f32),
     window: &mut Window,
 ) {
+    let camera = view.camera;
     let Some(size_px) = label_px(label.world_size, camera.zoom) else {
         return;
     };
@@ -541,18 +557,10 @@ fn label_lines(
         .lines
         .iter()
         .map(|line| {
-            let run = TextRun {
-                len: line.text.len(),
-                font: font("Inter"),
-                color: colour,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            };
             window.text_system().shape_line(
                 SharedString::from(line.text.clone()),
                 px(size_px),
-                &[run],
+                &label_runs(line, colour, view.tags),
                 None,
             )
         })
@@ -571,6 +579,35 @@ fn label_lines(
             width,
         })));
     }
+}
+
+/// One run per stretch of `line.text`: shown text in `ink` with no background, each tag in
+/// `tags.fg` on `tags.bg`; lengths are bytes and sum to `line.text.len()`; an empty line is one
+/// zero-length run.
+fn label_runs(line: &LabelLine, ink: Hsla, tags: TagColours) -> Vec<TextRun> {
+    let run = |len, color, background_color| TextRun {
+        len,
+        font: font("Inter"),
+        color,
+        background_color,
+        underline: None,
+        strikethrough: None,
+    };
+    // Walk the tag ranges in order, emitting the shown gap before each tag and the tail after
+    // the last; an empty line still needs one run for gpui to shape it.
+    let mut runs = Vec::with_capacity(2 * line.hidden.len() + 1);
+    let mut at = 0;
+    for tag in &line.hidden {
+        if tag.start > at {
+            runs.push(run(tag.start - at, ink, None));
+        }
+        runs.push(run(tag.len(), tags.fg, Some(tags.bg)));
+        at = tag.end;
+    }
+    if at < line.text.len() || runs.is_empty() {
+        runs.push(run(line.text.len() - at, ink, None));
+    }
+    runs
 }
 
 fn fill_of(e: &BoardItem) -> Fill {
@@ -608,8 +645,10 @@ mod board_util;
 
 #[cfg(test)]
 mod tests {
+    use placemat_core::board::Colour;
     use placemat_core::board::{Boxed, FillStyle, Point, Size, read_file};
     use placemat_core::scene::FixedAdvance;
+    use placemat_core::scene::LabelLine;
 
     use super::board_util::{
         all_kinds_board, el, extremes_board, limits_board, stacked_hachure_board,
@@ -630,6 +669,7 @@ mod tests {
             camera,
             viewport: VIEWPORT,
             scale: SCALE,
+            tags: TagColours::default(),
         }
     }
 
@@ -878,5 +918,52 @@ mod tests {
             "{} breaches: {breaches:#?}",
             breaches.len()
         );
+    }
+
+    fn colours() -> (Hsla, TagColours) {
+        let hsla = |r, g, b| Hsla::from(paint::rgba(Colour::rgb(r, g, b)));
+        let tags = TagColours {
+            fg: hsla(0xa1, 0xa1, 0xaa),
+            bg: hsla(0x14, 0x14, 0x18),
+        };
+        (hsla(0xe0, 0x31, 0x31), tags)
+    }
+
+    fn spans(runs: &[TextRun]) -> Vec<(usize, Hsla, Option<Hsla>)> {
+        runs.iter()
+            .map(|r| (r.len, r.color, r.background_color))
+            .collect()
+    }
+
+    #[test]
+    fn a_label_line_shapes_each_tag_as_a_muted_run_on_a_background() {
+        let (ink, tags) = colours();
+        let line = LabelLine::new("ab\u{202E}\u{202E}c");
+        let runs = label_runs(&line, ink, tags);
+        assert_eq!(
+            spans(&runs),
+            [
+                (2, ink, None),
+                (8, tags.fg, Some(tags.bg)),
+                (8, tags.fg, Some(tags.bg)),
+                (1, ink, None),
+            ]
+        );
+        assert_eq!(runs.iter().map(|r| r.len).sum::<usize>(), line.text.len());
+    }
+
+    #[test]
+    fn an_empty_or_plain_line_is_one_run() {
+        let (ink, tags) = colours();
+        assert_eq!(
+            spans(&label_runs(&LabelLine::new(""), ink, tags)),
+            [(0, ink, None)]
+        );
+        assert_eq!(
+            spans(&label_runs(&LabelLine::new("abc"), ink, tags)),
+            [(3, ink, None)]
+        );
+        let only = label_runs(&LabelLine::new("\u{7}"), ink, tags);
+        assert_eq!(spans(&only), [(8, tags.fg, Some(tags.bg))]);
     }
 }

@@ -212,3 +212,30 @@ async fn a_newer_board_opens_read_only_and_a_clean_open_clears_the_notes() {
     assert!(find_node(&tree, "board-warnings").is_none(), "{tree}");
     assert_eq!(shapes(&tree), set(&RECT));
 }
+
+/// Opens `board`, waits for its `note` banner, then fails a second open and checks that the
+/// note and the board stay beside the error.
+async fn a_failed_open_keeps(board: &str, note: &str) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let (path, _) = broken(dir.path());
+    let pilot = Pilot::start().await;
+    pilot
+        .ok("launch", launch_with("headless", &[&fixture(board)]))
+        .await;
+    tree_with(&pilot, note).await;
+    pilot.ok("key", json!({"keys": "ctrl-o"})).await;
+    pick(&pilot, &path).await;
+    let tree = tree_with(&pilot, "board-error").await;
+    node(&tree, note);
+    node(&tree, "board");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_open_keeps_the_warnings_banner() {
+    a_failed_open_keeps("repair/duplicate.board", "board-warnings").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_open_keeps_the_read_only_note() {
+    a_failed_open_keeps("readonly/newer.board", "board-readonly").await;
+}

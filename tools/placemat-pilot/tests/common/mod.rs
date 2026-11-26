@@ -120,6 +120,26 @@ pub fn launch_args(mode: &str) -> Value {
     json!({ "mode": mode, "build": false, "width": 1280, "height": 800, "scale": 1.0 })
 }
 
+/// A board fixture from placemat-core, as an absolute path.
+pub fn fixture(rel: &str) -> PathBuf {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/placemat-core/tests/fixtures/boards")
+        .join(rel);
+    std::fs::canonicalize(&path).unwrap_or(path)
+}
+
+/// `launch_args(mode)` with `paths` passed to the app.
+pub fn launch_with(mode: &str, paths: &[&Path]) -> Value {
+    let mut args = launch_args(mode);
+    args["args"] = json!(
+        paths
+            .iter()
+            .map(|p| p.to_str().unwrap())
+            .collect::<Vec<_>>()
+    );
+    args
+}
+
 /// The tree node for element `id`, if any: a session node carries it as `id`, a headless
 /// node as the last segment of its `path`.
 pub fn find_node<'a>(tree: &'a Value, id: &str) -> Option<&'a Value> {

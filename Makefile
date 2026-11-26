@@ -8,7 +8,7 @@ JOBS ?= 4
 LOCKED :=
 
 .DEFAULT_GOAL := run
-.PHONY: run check advisories fmt fmt-check lint test pilot-check icons-check notices-check script-test package clean workflows-lint
+.PHONY: run check advisories fmt fmt-check lint test pilot-check pilot-perf icons-check notices-check script-test package clean workflows-lint
 
 run:
 	CARGO_BUILD_JOBS="$(JOBS)" $(CARGO) run -p placemat-app
@@ -42,6 +42,12 @@ pilot-check:
 	$(CARGO) clippy $(LOCKED) $(PILOT) --all-targets --all-features -- -Dwarnings
 	$(CARGO) build $(LOCKED) -p placemat-app --bin placemat --profile timing
 	env -u WAYLAND_DISPLAY -u DISPLAY $(CARGO) test $(LOCKED) $(PILOT)
+
+# Frame cost of the board canvas on this machine's GPU, never in CI: the timing app for the
+# session step, then the ignored perf scenario, which fails only on the frame gate.
+pilot-perf:
+	$(CARGO) build $(LOCKED) -p placemat-app --bin placemat --profile timing
+	env -u WAYLAND_DISPLAY -u DISPLAY $(CARGO) test $(LOCKED) $(PILOT) --test perf -- --ignored --nocapture
 
 icons-check:
 	$(CARGO) xtask icons --check

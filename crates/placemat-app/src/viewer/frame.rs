@@ -40,6 +40,13 @@ pub fn cull(scene: &Scene, camera: Camera, viewport: (f64, f64)) -> Vec<Item> {
         .collect()
 }
 
+/// Names the canvas node `board` (author id) and `Board` (label). Session trees carry only
+/// author ids, so this is what lets them find the canvas the headless tree calls `board`.
+pub fn canvas_info(node: &mut accesskit::Node) {
+    node.set_author_id("board".to_owned());
+    node.set_label("Board".to_owned());
+}
+
 /// The accessibility author id of the element `id`: `shape-<id>`.
 pub fn leaf_id(id: &ElementId) -> String {
     format!("shape-{}", id.as_str())

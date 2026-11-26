@@ -184,6 +184,10 @@ impl Element for BoardElement {
         Some(Role::Canvas)
     }
 
+    fn write_a11y_info(&self, node: &mut accesskit::Node) {
+        frame::canvas_info(node);
+    }
+
     fn a11y_synthetic_children(&mut self, frame: &mut Frame, builder: &mut A11ySubtreeBuilder) {
         for leaf in frame::leaves(
             &frame.items,

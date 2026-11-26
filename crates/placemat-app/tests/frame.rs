@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use gpui_kit::accesskit::{self, Role};
-use placemat_app::viewer::frame::{cull, leaf_bounds, leaf_id, leaf_name, leaf_role, leaves};
+use placemat_app::viewer::frame::{
+    canvas_info, cull, leaf_bounds, leaf_id, leaf_name, leaf_role, leaves,
+};
 use placemat_core::board::{Board, ElementId, load, read_file};
 use placemat_core::scene::{Camera, Detail, FixedAdvance, Rect, Scene};
 
@@ -209,4 +211,12 @@ fn leaf_bounds_move_onto_the_window_clip_to_the_canvas_and_scale() {
         leaf_bounds(Rect::new(-50.0, 0.0, -10.0, 10.0), canvas, 1.0),
         None
     );
+}
+
+#[test]
+fn the_canvas_node_is_named_board_for_session_trees() {
+    let mut node = accesskit::Node::new(Role::Canvas);
+    canvas_info(&mut node);
+    assert_eq!(node.author_id(), Some("board"));
+    assert_eq!(node.label(), Some("Board"));
 }

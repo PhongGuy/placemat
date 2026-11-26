@@ -19,11 +19,14 @@ actions!(
     placemat,
     [
         /// Fits the whole board to the canvas again.
-        FitBoard
+        FitBoard,
+        /// Asks for a board file through the system dialog and opens it.
+        OpenBoard
     ]
 );
 
-/// Binds the viewer's keys; the fit key reaches a board editor once a click has focused it.
+/// Binds the viewer's keys; the fit key reaches a board editor once a click has focused it,
+/// the open key reaches the main view from anywhere inside it.
 pub fn init(cx: &mut App) {
     // `secondary-` means Cmd or Ctrl only once the host OS is known, which `load` reads and
     // `KeyBinding::new` does not.
@@ -32,5 +35,12 @@ pub fn init(cx: &mut App) {
         .map(Rc::new);
     if let Ok(fit) = KeyBinding::load("secondary-0", Box::new(FitBoard), context, false, None, cx) {
         cx.bind_keys([fit]);
+    }
+    let context = KeyBindingContextPredicate::parse("MainView")
+        .ok()
+        .map(Rc::new);
+    if let Ok(open) = KeyBinding::load("secondary-o", Box::new(OpenBoard), context, false, None, cx)
+    {
+        cx.bind_keys([open]);
     }
 }

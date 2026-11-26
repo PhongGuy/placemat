@@ -5,7 +5,7 @@ mod common;
 use common::{Pilot, find_node, fixture, launch_with, leaves, meets, node, rect, segment};
 use serde_json::{Value, json};
 
-/// The path segments above a leaf, as gpui-pilot v0.9.3 reports them; pinned from a real run.
+/// The path segments above a leaf, as gpui-pilot v0.9.4 reports them; pinned from a real run.
 const LEAF_PREFIX: &[&str] = &[];
 
 #[allow(dead_code)]
@@ -260,9 +260,9 @@ async fn paint_at_fit_and_full_zoom(board: &placemat_core::board::Board) -> Valu
     pilot
         .ok(
             "scroll",
-            // Lavapipe frames of a full-budget board take seconds: 120 s is ASSUMED (6 frames
-            // x 12 s, x2) until measured; see docs/research/2026-11-26-board-viewer-perf.md.
-            json!({"target": {"x": cx, "y": cy}, "notches": -60, "timeout_ms": 120_000}),
+            // Lavapipe frames of a full-budget board take seconds: 150 s is twice the slowest
+            // zoom seen in CI (75.2 s); see docs/research/2026-11-26-board-viewer-perf.md.
+            json!({"target": {"x": cx, "y": cy}, "notches": -60, "timeout_ms": 150_000}),
         )
         .await;
     pilot

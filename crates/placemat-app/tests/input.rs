@@ -4,10 +4,10 @@ use gpui_kit::{ScrollDelta, point, px};
 use placemat_app::viewer::input::{Wheel, wheel};
 
 fn zoom(w: Wheel) -> f64 {
-    match w {
-        Wheel::Zoom(f) => f,
-        other @ (Wheel::Pan(..) | _) => panic!("not a zoom: {other:?}"),
-    }
+    let Wheel::Zoom(f) = w else {
+        panic!("not a zoom: {w:?}")
+    };
+    f
 }
 
 #[test]

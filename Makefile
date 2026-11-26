@@ -41,7 +41,7 @@ pilot-check:
 	$(CARGO) fmt --check $(PILOT)
 	$(CARGO) clippy $(LOCKED) $(PILOT) --all-targets --all-features -- -Dwarnings
 	$(CARGO) build $(LOCKED) -p placemat-app --bin placemat --profile timing
-	env -u WAYLAND_DISPLAY -u DISPLAY $(CARGO) test $(LOCKED) $(PILOT)
+	env -u WAYLAND_DISPLAY -u DISPLAY $(CARGO) test $(LOCKED) $(PILOT) -- --show-output
 
 # Frame cost of the board canvas on this machine's GPU, never in CI: the timing app for the
 # session step, then the ignored perf scenario, which fails only on the frame gate.

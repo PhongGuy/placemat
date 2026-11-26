@@ -233,6 +233,9 @@ async fn the_wheel_zooms_about_the_cursor_and_shift_wheel_pans() {
 /// Opens `board` at scale 2, screenshots it at fit and at full zoom, and returns the tree
 /// read at fit.
 async fn paint_at_fit_and_full_zoom(board: &placemat_core::board::Board) -> Value {
+    // The full-budget boards each saturate the software rasteriser, so they take turns.
+    static PAINT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _turn = PAINT.lock().await;
     let dir = tempfile::TempDir::new().unwrap();
     let path = dir.path().join("big.board");
     let text = placemat_core::board::write(board).unwrap();
@@ -257,7 +260,9 @@ async fn paint_at_fit_and_full_zoom(board: &placemat_core::board::Board) -> Valu
     pilot
         .ok(
             "scroll",
-            json!({"target": {"x": cx, "y": cy}, "notches": -60}),
+            // Lavapipe frames of a full-budget board take seconds: 120 s is ASSUMED (6 frames
+            // x 12 s, x2) until measured; see docs/research/2026-11-26-board-viewer-perf.md.
+            json!({"target": {"x": cx, "y": cy}, "notches": -60, "timeout_ms": 120_000}),
         )
         .await;
     pilot

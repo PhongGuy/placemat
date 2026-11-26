@@ -4,6 +4,7 @@
 
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use rmcp::service::RunningService;
@@ -85,15 +86,19 @@ impl Pilot {
         let Value::Object(args) = args else {
             panic!("arguments must be an object")
         };
+        // Every call logs its wall time, so CI's output sizes the reply windows from evidence.
+        let start = Instant::now();
         let result = self
             .client
             .call_tool(CallToolRequestParams::new(tool.to_owned()).with_arguments(args))
-            .await
-            .unwrap_or_else(|e| panic!("{tool}: {e}"));
+            .await;
+        let ms = start.elapsed().as_millis();
+        eprintln!("pilot {tool}: {ms} ms");
+        let result = result.unwrap_or_else(|e| panic!("{tool} after {ms} ms: {e}"));
         assert_ne!(
             result.is_error,
             Some(true),
-            "{tool} failed: {:?} {:?}",
+            "{tool} failed after {ms} ms: {:?} {:?}",
             result.structured_content,
             result.content
         );

@@ -16,7 +16,7 @@ unsafe_code = "deny"
 [dependencies]
 placemat-app = { path = "../../crates/placemat-app" }
 gpui-kit = "=0.11.0"
-gpui-pilot-host = { git = "https://github.com/PhongGuy/gpui-pilot", tag = "v0.8.0" }
+gpui-pilot-host = { git = "https://github.com/PhongGuy/gpui-pilot", tag = "v0.9.1" }
 anyhow = "1"
 
 [dev-dependencies]

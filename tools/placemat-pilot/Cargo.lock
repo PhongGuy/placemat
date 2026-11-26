@@ -2735,8 +2735,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pilot-host"
-version = "0.8.0"
-source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.8.0#85b686b823dbbc51b6ac009958c87c4d000dd3f4"
+version = "0.9.1"
+source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.9.1#cd804591636496dde17a2f0c43e295e4b0207090"
 dependencies = [
  "anyhow",
  "async-task",
@@ -2750,8 +2750,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pilot-protocol"
-version = "0.8.0"
-source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.8.0#85b686b823dbbc51b6ac009958c87c4d000dd3f4"
+version = "0.9.1"
+source = "git+https://github.com/PhongGuy/gpui-pilot?tag=v0.9.1#cd804591636496dde17a2f0c43e295e4b0207090"
 dependencies = [
  "serde",
  "serde_json",

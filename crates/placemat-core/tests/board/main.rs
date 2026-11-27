@@ -15,6 +15,7 @@ mod model;
 mod open;
 mod order;
 mod repair;
+mod shown;
 mod unknown;
 mod util;
 mod write;

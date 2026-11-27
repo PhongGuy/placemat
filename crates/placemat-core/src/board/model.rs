@@ -167,6 +167,35 @@ impl Colour {
         };
         [r, g, b, a]
     }
+
+    /// The colour painted for this stored colour in `appearance`; alpha is kept as stored.
+    pub fn shown(self, appearance: Appearance) -> Colour {
+        match appearance {
+            Appearance::Light => self,
+            Appearance::Dark => {
+                // Excalidraw's canvas filter `invert(93%) hue-rotate(180deg)`: each channel is
+                // inverted to 93%, then mixed by the CSS hue-rotate matrix at 180 degrees.
+                const HUE_ROTATE_180: [[f64; 3]; 3] = [
+                    [-0.574, 1.430, 0.144],
+                    [0.426, 0.430, 0.144],
+                    [0.426, 1.430, -0.856],
+                ];
+                let v = self.rgb.map(|byte| {
+                    let c = f64::from(byte) / 255.0;
+                    0.93 * (1.0 - c) + 0.07 * c
+                });
+                let rgb = HUE_ROTATE_180.map(|row| {
+                    let mixed = row[0] * v[0] + row[1] * v[1] + row[2] * v[2];
+                    // In range 0..=255 after the clamp, so the cast cannot truncate.
+                    (mixed.clamp(0.0, 1.0) * 255.0).round() as u8
+                });
+                Colour {
+                    rgb,
+                    alpha: self.alpha,
+                }
+            }
+        }
+    }
 }
 
 impl fmt::Display for Colour {
@@ -178,6 +207,16 @@ impl fmt::Display for Colour {
             None => Ok(()),
         }
     }
+}
+
+/// Whether a board is shown on a light or a dark canvas.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Appearance {
+    /// Colours as stored.
+    Light,
+    /// Colours through the dark canvas filter.
+    Dark,
 }
 
 /// A stroke's dash pattern.

@@ -16,8 +16,8 @@ use std::collections::BTreeMap;
 
 pub use load::{Access, End, LoadError, Loaded, Warning, load};
 pub use model::{
-    Align, Anchor, Arrow, ArrowEnd, Boxed, Colour, Dash, Element, ElementId, Fill, FillStyle, Font,
-    FontFamily, Head, Heads, Kind, Path, Point, Seed, Size, Stroke, Text,
+    Align, Anchor, Appearance, Arrow, ArrowEnd, Boxed, Colour, Dash, Element, ElementId, Fill,
+    FillStyle, Font, FontFamily, Head, Heads, Kind, Path, Point, Seed, Size, Stroke, Text,
 };
 pub use open::{OpenError, read_file};
 pub use rng::Rng;

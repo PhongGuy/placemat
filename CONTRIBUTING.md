@@ -50,6 +50,7 @@ From a checkout, `make run` builds with 4 jobs (`make JOBS=8 run` for more) and 
 | `make pilot-check` | Builds and runs the gpui-pilot scenarios in `tools/placemat-pilot`, which drive the real app. |
 | `make script-test` | The bash suites under `scripts/tests`. |
 | `make workflows-lint` | actionlint over `.github/workflows`. |
+| `make windows-check` | Clippy on `placemat-core` for `x86_64-pc-windows-gnu`, so Windows-only code is linted from Linux. Needs that rustup target and the mingw-w64 C compiler. |
 | `make notices-check` | Renders the third-party notices with `cargo-about` 0.9.2 and fails on a licence `about.toml` does not accept. |
 | `make package` | The Linux `.deb` and AppImage, verified, in `target/dist/linux`. Needs `cargo-packager` 0.11.8. |
 | `make run` | Builds and opens the app. |

@@ -12,6 +12,7 @@ mod launch_args;
 mod notice;
 mod open;
 mod paint;
+mod update_launch;
 mod update_model;
 mod update_quit;
 mod window;

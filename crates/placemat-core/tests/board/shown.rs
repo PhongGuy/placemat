@@ -7,7 +7,7 @@ fn hex(s: &str) -> Colour {
     Colour::parse(s).unwrap()
 }
 
-/// (stored, shown in dark), every value checked by hand from the rule in the spec.
+/// (stored, shown in dark), every value checked by hand from the rule in `Colour::shown`.
 const DARK: [(&str, &str); 8] = [
     ("#1e1e1e", "#d3d3d3"),
     ("#000000", "#ededed"),

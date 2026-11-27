@@ -2,6 +2,8 @@
 //! plus helpers that read the element tree.
 #![allow(dead_code)]
 
+use std::fs::File;
+use std::io::BufReader;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -193,4 +195,66 @@ pub fn leaves(tree: &Value) -> Vec<&Value> {
 /// Whether two (x, y, w, h) boxes share a point.
 pub fn meets(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
     a.0 <= b.0 + b.2 && b.0 <= a.0 + a.2 && a.1 <= b.1 + b.3 && b.1 <= a.1 + a.3
+}
+
+/// The launch width in logical pixels (`launch_args`).
+pub const WINDOW_W: f64 = 1280.0;
+
+/// A decoded screenshot: 8-bit samples, `samples` per pixel, rows `line` bytes apart.
+pub struct Shot {
+    pub width: u32,
+    pub height: u32,
+    pub samples: usize,
+    pub line: usize,
+    pub data: Vec<u8>,
+}
+
+pub fn decode(path: &Path) -> Shot {
+    let mut decoder = png::Decoder::new(BufReader::new(File::open(path).unwrap()));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().unwrap();
+    let mut data = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut data).unwrap();
+    let samples = info.color_type.samples();
+    assert!(samples >= 3, "a colour screenshot: {:?}", info.color_type);
+    Shot {
+        width: info.width,
+        height: info.height,
+        samples,
+        line: info.line_size,
+        data,
+    }
+}
+
+/// The device-pixel span `(x0, y0, x1, y1)` of the logical box `b`, clipped to the shot.
+fn span(shot: &Shot, b: (f64, f64, f64, f64)) -> (u32, u32, u32, u32) {
+    let s = f64::from(shot.width) / WINDOW_W;
+    let x0 = (b.0 * s).max(0.0) as u32;
+    let y0 = (b.1 * s).max(0.0) as u32;
+    let x1 = (((b.0 + b.2) * s) as u32).min(shot.width);
+    let y1 = (((b.1 + b.3) * s) as u32).min(shot.height);
+    (x0, y0, x1.max(x0), y1.max(y0))
+}
+
+/// How many device pixels the logical box `b` covers in the shot.
+pub fn area(shot: &Shot, b: (f64, f64, f64, f64)) -> usize {
+    let (x0, y0, x1, y1) = span(shot, b);
+    (x1 - x0) as usize * (y1 - y0) as usize
+}
+
+/// Pixels inside the logical box `b` within `tol` of `want` on every channel. Counting a
+/// whole box, rather than probing one point, keeps glyph ink and antialiasing out of the call.
+pub fn near(shot: &Shot, b: (f64, f64, f64, f64), want: [u8; 3], tol: u8) -> usize {
+    let (x0, y0, x1, y1) = span(shot, b);
+    let mut n = 0;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let i = y as usize * shot.line + x as usize * shot.samples;
+            let px = &shot.data[i..i + 3];
+            if px.iter().zip(want).all(|(&a, b)| a.abs_diff(b) <= tol) {
+                n += 1;
+            }
+        }
+    }
+    n
 }

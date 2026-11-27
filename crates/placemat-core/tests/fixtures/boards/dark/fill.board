@@ -1,0 +1,11 @@
+placemat-board version=0
+
+rect "darkFil1" {
+    at 0 0
+    seed 1
+    size 200 150
+    fill "#a5d8ff" style=solid
+    stroke "#1e1e1e" width=2 roughness=0 dash=solid
+    label "Fill"
+    z "a1"
+}

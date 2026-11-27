@@ -4,14 +4,14 @@
 use std::rc::Rc;
 
 use gpui_kit::accesskit::{self, Role};
-use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::component::{ActiveTheme as _, ThemeMode};
 use gpui_kit::{
     A11ySubtreeBuilder, App, Bounds, ContentMask, Element, ElementId, GlobalElementId, Hsla,
     InspectorElementId, LayoutId, LineJoin, Path, PathBuilder, PathStyle, Pixels, Point, Rgba,
     ShapedLine, SharedString, StrokeOptions, Style, TextAlign, TextRun, Window, fill, font, point,
     px, relative, size,
 };
-use placemat_core::board::{Align, Board, Element as BoardItem, Fill, Kind, Stroke};
+use placemat_core::board::{Align, Appearance, Board, Element as BoardItem, Fill, Kind, Stroke};
 use placemat_core::scene::{
     Camera, Detail, Label, LabelLine, Op, OpSet, Rect, Scene, SetKind, Visible, dash_array,
     label_px,
@@ -130,6 +130,7 @@ impl Element for BoardElement {
                 fg: cx.theme().muted_foreground,
                 bg: cx.theme().muted,
             },
+            appearance: appearance(cx.theme().mode),
         };
         let planned = plan(&self.opened.scene, board, view);
         let hit = planned.iter().any(|p| !whole(&p.cost, &p.grant));
@@ -264,6 +265,16 @@ struct View {
     viewport: (f64, f64),
     scale: f64,
     tags: TagColours,
+    /// Which canvas the board colours are shown on.
+    appearance: Appearance,
+}
+
+/// The board appearance for the kit's theme mode.
+fn appearance(mode: ThemeMode) -> Appearance {
+    match mode {
+        ThemeMode::Light => Appearance::Light,
+        ThemeMode::Dark => Appearance::Dark,
+    }
 }
 
 /// The colours a tag paints in: muted text on a muted background.
@@ -424,17 +435,20 @@ fn build(
             point(px(x - DOT_PX / 2.0), px(y - DOT_PX / 2.0)),
             size(px(DOT_PX), px(DOT_PX)),
         );
-        draws.push(Draw::Dot(at, paint::rgba(stroke.colour)));
+        draws.push(Draw::Dot(
+            at,
+            paint::rgba(stroke.colour.shown(view.appearance)),
+        ));
         return;
     }
     let fill_colour = match fill_of(e) {
-        Fill::Colour { colour, .. } => Some(paint::rgba(colour)),
+        Fill::Colour { colour, .. } => Some(paint::rgba(colour.shown(view.appearance))),
         Fill::None | _ => None,
     };
     for (set, dash) in p.sets() {
         let colour = match set.kind {
             SetKind::Fill | SetKind::Sketch => fill_colour,
-            SetKind::Stroke | _ => Some(paint::rgba(stroke.colour)),
+            SetKind::Stroke | _ => Some(paint::rgba(stroke.colour.shown(view.appearance))),
         };
         let Some(colour) = colour else { continue };
         if let Some(path) = path_of(set, &stroke, dash, v.origin, camera, corner, scale) {
@@ -550,7 +564,7 @@ fn label_lines(
     let Some(size_px) = label_px(label.world_size, camera.zoom) else {
         return;
     };
-    let colour = Hsla::from(paint::rgba(stroke.colour));
+    let colour = Hsla::from(paint::rgba(stroke.colour.shown(view.appearance)));
     let line_height = size_px * LINE_HEIGHT_EM;
     let (x, y) = paint::to_px(label.at, origin, camera);
     let shaped: Vec<ShapedLine> = label
@@ -670,6 +684,7 @@ mod tests {
             viewport: VIEWPORT,
             scale: SCALE,
             tags: TagColours::default(),
+            appearance: Appearance::Light,
         }
     }
 
@@ -965,5 +980,11 @@ mod tests {
         );
         let only = label_runs(&LabelLine::new("\u{7}"), ink, tags);
         assert_eq!(spans(&only), [(8, tags.fg, Some(tags.bg))]);
+    }
+
+    #[test]
+    fn the_kit_theme_mode_picks_the_board_appearance() {
+        assert_eq!(appearance(ThemeMode::Light), Appearance::Light);
+        assert_eq!(appearance(ThemeMode::Dark), Appearance::Dark);
     }
 }

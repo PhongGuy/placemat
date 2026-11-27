@@ -282,3 +282,12 @@ pub fn leftovers(dir: &Path) -> Vec<String> {
     names.sort();
     names
 }
+
+use placemat_core::update::{Staged, download};
+
+/// Stages `body` in `dir` as the 99.0.0 `format` release, through a real check and download.
+pub fn stage(dir: &Path, format: &str, body: &[u8]) -> Staged {
+    let s = Server::start();
+    s.route("/artifact", Reply::Body(body.to_vec()));
+    download(&offer(&s, format, body), dir, |_, _| {}).unwrap()
+}

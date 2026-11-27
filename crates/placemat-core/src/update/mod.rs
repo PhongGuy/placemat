@@ -2,16 +2,14 @@
 //! and the check, download and install of a newer release. Every call blocks; the app runs
 //! them off the UI thread.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the bundle has no caller until install exists")
-)]
+mod apply;
 mod bundle;
 mod config;
 mod download;
@@ -21,6 +19,7 @@ mod install;
 mod manifest;
 mod sign;
 
+pub use apply::install;
 pub use config::{RELEASE_BUILD, build_config, build_config_with, target_id};
 pub use download::{download, sweep_staged};
 pub use error::{CheckError, DownloadError, InstallError};
@@ -294,4 +293,19 @@ impl Staged {
     pub fn size(&self) -> u64 {
         self.size
     }
+}
+
+/// How the newly installed version starts.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Relaunch {
+    /// Start this AppImage or `.app` bundle after this process exits.
+    Restart(PathBuf),
+    /// Start this installer now, then exit; it restarts the app itself.
+    Installer {
+        /// The installer executable.
+        program: PathBuf,
+        /// Its command-line arguments.
+        args: Vec<OsString>,
+    },
 }

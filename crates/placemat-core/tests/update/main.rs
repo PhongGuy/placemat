@@ -7,6 +7,7 @@ mod check;
 mod config;
 mod download;
 mod evaluate;
+mod install;
 mod install_kind;
 mod server;
 mod signature;

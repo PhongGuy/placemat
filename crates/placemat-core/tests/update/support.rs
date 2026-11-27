@@ -243,3 +243,42 @@ pub fn feed_config(url: &str, key: &TestKey, current: &str) -> UpdateConfig {
     )
     .unwrap()
 }
+
+use placemat_core::update::{Available, Timeouts, check};
+use std::path::Path;
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    use sha2::Digest as _;
+    hex::encode(sha2::Sha256::digest(data))
+}
+
+/// Publishes 99.0.0 with a `format` entry at `<server>/artifact` listing `listed`'s size and
+/// digest, and returns the offer, whose artifact download may take `total`.
+pub fn offer_within(s: &Server, format: &str, listed: &[u8], total: Duration) -> Available {
+    let k = TestKey::generate();
+    let m = format!(
+        r#"{{"version":"99.0.0","targets":{{"{TARGET}":{{"url":"{}","format":"{format}","size":{},"sha256":"{}"}}}}}}"#,
+        s.url("/artifact"),
+        listed.len(),
+        sha256_hex(listed)
+    );
+    publish(s, &k, &m);
+    let mut t = Timeouts::default();
+    t.artifact = total;
+    let cfg = feed_config(&s.url("/latest.json"), &k, "1.0.0").with_timeouts(t);
+    check(&cfg).unwrap().expect("offered")
+}
+
+pub fn offer(s: &Server, format: &str, listed: &[u8]) -> Available {
+    offer_within(s, format, listed, Duration::from_secs(15 * 60))
+}
+
+/// The sorted file names in `dir`.
+pub fn leftovers(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}

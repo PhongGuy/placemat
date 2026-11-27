@@ -5,6 +5,7 @@
 
 mod check;
 mod config;
+mod download;
 mod evaluate;
 mod server;
 mod signature;

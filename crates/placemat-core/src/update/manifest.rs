@@ -74,6 +74,8 @@ pub fn evaluate(manifest: &[u8], cfg: &UpdateConfig) -> Result<Option<Available>
         url: entry.url,
         sha256: entry.sha256,
         size: entry.size,
+        timeouts: cfg.timeouts(),
+        allow_loopback_http: cfg.allow_loopback_http(),
     }))
 }
 

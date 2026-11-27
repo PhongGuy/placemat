@@ -2,19 +2,22 @@
 //! and the check, download and install of a newer release. Every call blocks; the app runs
 //! them off the UI thread.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
 mod config;
+mod download;
 mod error;
 mod fetch;
 mod manifest;
 mod sign;
 
 pub use config::{RELEASE_BUILD, build_config, build_config_with, target_id};
-pub use error::CheckError;
+pub use download::{download, sweep_staged};
+pub use error::{CheckError, DownloadError};
 pub use fetch::check;
 pub use manifest::evaluate;
 pub use sign::verify_manifest;
@@ -211,6 +214,9 @@ pub struct Available {
     url: String,
     sha256: String,
     size: u64,
+    // Copied from the config by `evaluate`, so the download keeps the check's rules.
+    pub(crate) timeouts: Timeouts,
+    pub(crate) allow_loopback_http: bool,
 }
 
 impl Available {
@@ -240,6 +246,44 @@ impl Available {
     }
 
     /// The artifact's size in bytes.
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+}
+
+/// A downloaded artifact whose size and SHA-256 matched the offer, waiting to be installed.
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct Staged {
+    path: PathBuf,
+    version: String,
+    format: Format,
+    sha256: String,
+    size: u64,
+}
+
+impl Staged {
+    /// The staged file.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The release version it holds.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// How it is packaged.
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
+    /// Its SHA-256 as the offer listed it, 64 lowercase hex characters.
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    /// Its size in bytes.
     pub fn size(&self) -> u64 {
         self.size
     }

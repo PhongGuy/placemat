@@ -7,14 +7,14 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
 
-use super::claim::PREFIX;
+use super::claim::{Claim, PREFIX};
 use super::fetch::agent;
 use super::{Available, DownloadError, Format, Staged};
 
 const CHUNK: usize = 64 * 1024;
 
-/// Streams the artifact to `<name>.part` in `dir`, then renames it to `<name>`:
-/// `placemat-update-<version>` plus `.AppImage`, `.app.tar.gz` or `.exe`. The `.part` is
+/// Streams the artifact to `<name>.part` in `claim.dir()`, then renames it to `<name>`:
+/// `placemat-update-<nonce>-<version>` plus `.AppImage`, `.app.tar.gz` or `.exe`. The `.part` is
 /// created exclusively (mode 0600 on Unix) before any request, or the result is
 /// [`DownloadError::NotWritable`]. A body longer or shorter than listed is
 /// [`DownloadError::SizeMismatch`], a wrong digest [`DownloadError::HashMismatch`], a 404
@@ -22,10 +22,11 @@ const CHUNK: usize = 64 * 1024;
 /// failure removes the `.part`. `progress(received, size)` runs after each chunk is written.
 pub fn download(
     a: &Available,
-    dir: &Path,
+    claim: &Claim,
     progress: impl FnMut(u64, u64),
 ) -> Result<Staged, DownloadError> {
-    let name = staged_name(a);
+    let dir = claim.dir();
+    let name = staged_name(claim.nonce(), a);
     let path = dir.join(&name);
     let part = dir.join(format!("{name}.part"));
     // A `.part` left by an earlier crash is never resumed: its bytes were never verified.
@@ -53,14 +54,15 @@ pub fn download(
     })
 }
 
-/// The staged file name; installers recognise an AppImage, app bundle or `.exe` by its suffix.
-fn staged_name(a: &Available) -> String {
+/// The staged file name; the nonce comes first because a version may contain `-`, and
+/// installers recognise an AppImage, app bundle or `.exe` by its suffix.
+fn staged_name(nonce: &str, a: &Available) -> String {
     let suffix = match a.format {
         Format::AppImage => ".AppImage",
         Format::App => ".app.tar.gz",
         Format::Nsis => ".exe",
     };
-    format!("{PREFIX}{}{suffix}", a.version)
+    format!("{PREFIX}{nonce}-{}{suffix}", a.version)
 }
 
 /// Writes the body into `file`, never past `a.size` bytes, then checks its length and digest.
@@ -168,15 +170,20 @@ mod tests {
             },
             allow_loopback_http: false,
         };
-        let got = download(&a, dir.path(), |_, _| {});
+        let claim = crate::update::Claim::new(dir.path()).unwrap();
+        let got = download(&a, &claim, |_, _| {});
         assert!(matches!(got, Err(DownloadError::Offline(_))), "{got:?}");
         assert!(
             matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
             "the request reached the server"
         );
+        let left: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
         assert_eq!(
-            std::fs::read_dir(dir.path()).unwrap().count(),
-            0,
+            left,
+            [format!("placemat-update-{}.lock", claim.nonce())],
             "a file was left"
         );
     }

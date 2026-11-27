@@ -5,12 +5,13 @@ mod model;
 mod quit;
 mod text;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::{App, AppContext as _, BorrowAppContext as _, Global, Task};
 use placemat_core::update::{
-    self, Available, InstallKind, Os, Reason, Staged, UpdateConfig, install_kind, staging_dir,
-    sweep_staged,
+    self, Available, Claim, InstallKind, Os, Reason, Staged, UpdateConfig, install_kind,
+    staging_dir, sweep_staged,
 };
 
 pub use model::{Armed, Notice, Offer, UpdateModel};
@@ -20,11 +21,12 @@ pub use text::notice_text;
 /// How long the checker waits between feed checks.
 const CHECK_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// The running updater: the notice model, the config its checks use and the tick loop. It
-/// exists only when update checks are enabled.
+/// The running updater: the notice model, the config its checks use, the staging claim
+/// from the first Install and the tick loop. It exists only when update checks are enabled.
 pub struct Updater {
     model: UpdateModel<Available, Staged>,
     cfg: UpdateConfig,
+    claim: Option<Arc<Claim>>,
     _ticks: Task<()>,
 }
 
@@ -56,6 +58,22 @@ pub fn sweep_at_launch(kind: &InstallKind) {
     }
 }
 
+/// The claim this process stages under: the one in `slot` if an earlier Install took it,
+/// else a new claim on `staging_dir(kind)`, stored in `slot`. Errors (an install the updater
+/// does not own, a directory where the lock file cannot be created) leave `slot` empty.
+pub fn staging_claim(
+    slot: &mut Option<Arc<Claim>>,
+    kind: &InstallKind,
+) -> Result<Arc<Claim>, String> {
+    if let Some(claim) = slot {
+        return Ok(Arc::clone(claim));
+    }
+    let dir = staging_dir(kind).map_err(|e| e.to_string())?;
+    let claim = Arc::new(Claim::new(&dir).map_err(|e| e.to_string())?);
+    *slot = Some(Arc::clone(&claim));
+    Ok(claim)
+}
+
 /// Sweeps leftovers, then, when checks are enabled, sets the `Updater` global and starts
 /// the checker: once now and every 24 hours, failures logged and retried at the next tick.
 pub fn init(cx: &mut App) {
@@ -69,6 +87,7 @@ pub fn init(cx: &mut App) {
     cx.set_global(Updater {
         model: UpdateModel::new(kind),
         cfg,
+        claim: None,
         _ticks: Task::ready(()),
     });
     // Annotated: the loop's type is `!`, and edition 2024 does not fall back to `()`.
@@ -118,15 +137,17 @@ pub fn start_install(cx: &mut App) {
     if !cx.has_global::<Updater>() {
         return;
     }
-    let (payload, dir) = cx.update_global::<Updater, _>(|u, _| {
-        let payload = u.model.start_download().cloned();
-        (payload, staging_dir(u.model.kind()))
+    // The claim is taken only once an offer is downloading, so an Install with nothing to
+    // download leaves no lock file behind.
+    let started = cx.update_global::<Updater, _>(|u, _| {
+        let payload = u.model.start_download().cloned()?;
+        Some((payload, staging_claim(&mut u.claim, u.model.kind())))
     });
-    let Some(payload) = payload else {
+    let Some((payload, claim)) = started else {
         return;
     };
-    let dir = match dir {
-        Ok(dir) => dir,
+    let claim = match claim {
+        Ok(claim) => claim,
         Err(e) => {
             eprintln!("placemat: update download: {e}");
             cx.update_global::<Updater, _>(|u, _| u.model.downloaded(None));
@@ -135,7 +156,7 @@ pub fn start_install(cx: &mut App) {
     };
     cx.spawn(async move |cx| {
         let result = cx
-            .background_spawn(async move { update::download(&payload, &dir, |_, _| {}) })
+            .background_spawn(async move { update::download(&payload, &claim, |_, _| {}) })
             .await;
         if let Err(e) = &result {
             eprintln!("placemat: update download failed: {e}");

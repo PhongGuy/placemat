@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use placemat_app::updates::{
     Launcher, Offer, QuitInstall, UpdateModel, install_at_quit, relaunch_command,
@@ -200,6 +200,7 @@ fn relaunch_command_waits_for_pid_then_runs() {
         assert_eq!(args[0], "-c");
         let script = args[1].to_str().unwrap();
         assert!(script.starts_with("i=0; n=$2; while"), "{script}");
+        assert!(!script.contains(['\\', '\n']), "one clean line: {script:?}");
         assert!(script.contains("kill -0 \"$0\""), "{script}");
         assert!(script.ends_with(start), "{script}");
         assert_eq!(args[2], "4242");
@@ -254,7 +255,7 @@ fn relaunch_command_runs_the_target_when_the_wait_runs_out() {
         .arg("30")
         .spawn()
         .unwrap();
-    let started = Instant::now();
+    let started = std::time::Instant::now();
     let status = relaunch_command(&target, alive.id(), Os::Linux, Duration::from_millis(300))
         .unwrap()
         .status();

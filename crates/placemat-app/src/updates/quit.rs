@@ -59,7 +59,7 @@ pub fn relaunch_command(path: &Path, pid: u32, os: Os, wait: Duration) -> Option
     // Every value travels as an argument ($0 pid, $1 path, $2 ticks of 100 ms), so nothing
     // is ever formatted into the script text.
     let script = format!(
-        "i=0; n=$2; while [ \"$i\" -lt \"$n\" ] && kill -0 \"$0\" 2>/dev/null; \\
+        "i=0; n=$2; while [ \"$i\" -lt \"$n\" ] && kill -0 \"$0\" 2>/dev/null; \
          do sleep 0.1; i=$((i+1)); done; {start}"
     );
     let ticks = wait.as_millis() / 100;

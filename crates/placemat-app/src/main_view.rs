@@ -7,13 +7,15 @@ use std::sync::Arc;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, TitleBar};
 use gpui_kit::{
-    AnyElement, AppContext as _, Context, Div, Entity, FocusHandle, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, PathPromptOptions, Render, Role, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
+    AnyElement, App, AppContext as _, Context, Div, Entity, FocusHandle, Hsla,
+    InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Render, Role,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled as _, Subscription,
+    TestSupportExt as _, Window, div,
 };
 use placemat_core::board::Access;
 
 use crate::theme;
+use crate::updates::{self, Notice, Updater, notice_text};
 use crate::viewer::OpenBoard;
 use crate::viewer::editor::BoardEditor;
 use crate::viewer::measure::GpuiMeasure;
@@ -30,6 +32,7 @@ pub struct MainView {
     tickets: Tickets,
     _appearance: Subscription,
     _focus_lost: Subscription,
+    _updates: Subscription,
 }
 
 impl MainView {
@@ -49,6 +52,7 @@ impl MainView {
         let focus_lost = cx.on_focus_lost(window, |view, window, cx| {
             window.focus(&view.focus, cx);
         });
+        let updates = cx.observe_global::<Updater>(|_, cx| cx.notify());
         let mut view = MainView {
             board: None,
             error: None,
@@ -58,6 +62,7 @@ impl MainView {
             tickets: Tickets::default(),
             _appearance: appearance,
             _focus_lost: focus_lost,
+            _updates: updates,
         };
         if let Some(path) = path {
             view.open(path, cx);
@@ -131,6 +136,50 @@ impl MainView {
             let _ = this.update(cx, |view, cx| view.open(path, cx));
         })
         .detach();
+    }
+
+    /// The update notice with the buttons its state allows; absent without the updater or
+    /// while nothing is offered.
+    fn update_banner(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let notice = cx.try_global::<Updater>()?.model().notice()?;
+        let theme = cx.theme();
+        let fg = theme.info_foreground;
+        let button = |id: &'static str, label: &'static str, click: fn(&mut App)| {
+            Button::new(id)
+                .ghost()
+                .small()
+                .label(label)
+                .text_color(fg)
+                .on_click(move |_, _, cx| click(cx))
+        };
+        let later = button("update-later", "Later", updates::dismiss);
+        let buttons = match notice {
+            Notice::Offered(_) => vec![
+                button("update-install", "Install", updates::start_install),
+                later,
+            ],
+            Notice::Downloading(_) => vec![],
+            Notice::Ready(_) => vec![
+                button("update-restart", "Restart now", updates::restart_now),
+                later,
+            ],
+            Notice::DownloadFailed(_) | Notice::HowTo { .. } => vec![
+                button(
+                    "update-download-page",
+                    "Download page",
+                    updates::open_download_page,
+                ),
+                later,
+            ],
+        };
+        let text = SharedString::from(notice_text(&notice));
+        let row = banner("update-notice", Role::Status, &text, theme.info, fg)
+            .flex()
+            .items_start()
+            .justify_between()
+            .gap_2()
+            .child(div().flex().gap_1().children(buttons));
+        Some(row.test_support().into_any_element())
     }
 
     /// The banner saying why the last open failed, while it stands.
@@ -232,6 +281,7 @@ impl Render for MainView {
             .bg(theme.background)
             .text_color(theme.foreground)
             .child(TitleBar::new())
+            .children(self.update_banner(cx))
             .children(self.error_banner(cx))
             .children(self.readonly_banner(cx))
             .children(self.warnings_banner(cx))

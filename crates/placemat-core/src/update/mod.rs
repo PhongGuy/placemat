@@ -26,7 +26,7 @@ pub use error::{CheckError, DownloadError, InstallError};
 pub use fetch::check;
 pub use install::{InstallKind, Reason, install_kind, staging_dir};
 pub use manifest::evaluate;
-pub use sign::verify_manifest;
+pub use sign::{Verified, verify_manifest};
 
 /// The marker line `assets/update/keys.txt` held before a real key existed. A release build
 /// refuses to compile with it (see this crate's build script), and so does [`trusted_keys`].

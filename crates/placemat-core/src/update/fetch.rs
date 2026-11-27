@@ -41,8 +41,7 @@ pub fn check(cfg: &UpdateConfig) -> Result<Option<Available>, CheckError> {
     let signature = read_capped(response, SIGNATURE_CAP, "the signature")?;
 
     // The bytes verified are the bytes parsed; nothing is read from an unverified manifest.
-    verify_manifest(&manifest, &signature, &cfg.keys)?;
-    evaluate(&manifest, cfg)
+    evaluate(verify_manifest(&manifest, &signature, &cfg.keys)?, cfg)
 }
 
 /// The updater's agent: a fixed header set, at most five redirects, platform roots, and

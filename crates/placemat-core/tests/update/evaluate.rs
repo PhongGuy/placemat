@@ -1,7 +1,7 @@
 //! `evaluate`: the manifest rules on bytes whose signature already verified.
 
-use crate::support::{KEY_LINE, SHA, TARGET, manifest};
-use placemat_core::update::{CheckError, Format, UpdateConfig, build_config_with, evaluate};
+use crate::support::{KEY_LINE, SHA, TARGET, manifest, signed_evaluate};
+use placemat_core::update::{CheckError, Format, UpdateConfig, build_config_with};
 
 const ART: &str = "https://example.com/Placemat.AppImage";
 
@@ -22,7 +22,7 @@ fn own(version: &str) -> String {
 
 #[test]
 fn evaluate_offers_a_newer_stable_release() {
-    let a = evaluate(own("1.2.0").as_bytes(), &release("1.1.9"))
+    let a = signed_evaluate(own("1.2.0").as_bytes(), &release("1.1.9"))
         .unwrap()
         .expect("offered");
     assert_eq!(a.version(), "1.2.0");
@@ -38,7 +38,7 @@ fn evaluate_offers_only_strictly_newer() {
         ("2.0.0", "1.9.9"),
         ("1.0.0", "1.0.0-dev"),
     ] {
-        let got = evaluate(own(remote).as_bytes(), &release(current)).unwrap();
+        let got = signed_evaluate(own(remote).as_bytes(), &release(current)).unwrap();
         assert!(got.is_some(), "{remote} against {current}");
     }
 }
@@ -47,7 +47,7 @@ fn evaluate_offers_only_strictly_newer() {
 fn evaluate_ignores_equal() {
     for (remote, current) in [("1.0.0", "1.0.0"), ("1.0.0+rebuild", "1.0.0")] {
         assert_eq!(
-            evaluate(own(remote).as_bytes(), &release(current)),
+            signed_evaluate(own(remote).as_bytes(), &release(current)),
             Ok(None),
             "{remote}"
         );
@@ -58,7 +58,7 @@ fn evaluate_ignores_equal() {
 fn evaluate_ignores_older() {
     for remote in ["0.9.9", "0.1.0"] {
         assert_eq!(
-            evaluate(own(remote).as_bytes(), &release("1.0.0")),
+            signed_evaluate(own(remote).as_bytes(), &release("1.0.0")),
             Ok(None),
             "{remote}"
         );
@@ -68,7 +68,7 @@ fn evaluate_ignores_older() {
 #[test]
 fn evaluate_refuses_prerelease() {
     for v in ["1.2.0-rc.1", "9.0.0-beta"] {
-        let got = evaluate(own(v).as_bytes(), &release("0.1.0"));
+        let got = signed_evaluate(own(v).as_bytes(), &release("0.1.0"));
         assert!(
             matches!(got, Err(CheckError::ManifestInvalid(_))),
             "{v}: {got:?}"
@@ -78,12 +78,12 @@ fn evaluate_refuses_prerelease() {
 
 #[test]
 fn evaluate_refuses_bad_version() {
-    let remote = evaluate(own("two").as_bytes(), &release("1.0.0"));
+    let remote = signed_evaluate(own("two").as_bytes(), &release("1.0.0"));
     assert!(
         matches!(remote, Err(CheckError::ManifestInvalid(_))),
         "{remote:?}"
     );
-    let current = evaluate(own("2.0.0").as_bytes(), &release("not-semver"));
+    let current = signed_evaluate(own("2.0.0").as_bytes(), &release("not-semver"));
     assert!(
         matches!(current, Err(CheckError::ManifestInvalid(_))),
         "{current:?}"
@@ -94,7 +94,7 @@ fn evaluate_refuses_bad_version() {
 fn evaluate_missing_target_is_no_entry() {
     let m = own("2.0.0").replace(TARGET, "app-plan9-mips");
     assert_eq!(
-        evaluate(m.as_bytes(), &release("0.1.0")),
+        signed_evaluate(m.as_bytes(), &release("0.1.0")),
         Err(CheckError::NoEntryForTarget(TARGET.to_owned()))
     );
 }
@@ -115,7 +115,7 @@ fn evaluate_refuses_malformed_documents_and_entries() {
         manifest("2.0.0", "appimage", ART, &SHA.to_uppercase()),
     ];
     for m in bad {
-        let got = evaluate(m.as_bytes(), &release("0.1.0"));
+        let got = signed_evaluate(m.as_bytes(), &release("0.1.0"));
         assert!(
             matches!(got, Err(CheckError::ManifestInvalid(_))),
             "{m}: {got:?}"
@@ -131,7 +131,7 @@ fn evaluate_maps_every_format() {
         ("nsis", Format::Nsis),
     ] {
         let m = manifest("2.0.0", name, ART, SHA);
-        let a = evaluate(m.as_bytes(), &release("0.1.0"))
+        let a = signed_evaluate(m.as_bytes(), &release("0.1.0"))
             .unwrap()
             .expect("offered");
         assert_eq!(a.format(), format, "{name}");
@@ -141,17 +141,17 @@ fn evaluate_maps_every_format() {
 #[test]
 fn evaluate_refuses_loopback_http_artifact_when_not_allowed() {
     let m = manifest("2.0.0", "appimage", "http://127.0.0.1:9/a", SHA);
-    let got = evaluate(m.as_bytes(), &release("0.1.0"));
+    let got = signed_evaluate(m.as_bytes(), &release("0.1.0"));
     assert!(
         matches!(got, Err(CheckError::ManifestInvalid(_))),
         "{got:?}"
     );
-    let a = evaluate(m.as_bytes(), &local("0.1.0"))
+    let a = signed_evaluate(m.as_bytes(), &local("0.1.0"))
         .unwrap()
         .expect("offered under the override");
     assert_eq!(a.url(), "http://127.0.0.1:9/a");
     let far = manifest("2.0.0", "appimage", "http://example.com/a", SHA);
-    let got = evaluate(far.as_bytes(), &local("0.1.0"));
+    let got = signed_evaluate(far.as_bytes(), &local("0.1.0"));
     assert!(
         matches!(got, Err(CheckError::ManifestInvalid(_))),
         "{got:?}"

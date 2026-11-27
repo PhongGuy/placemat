@@ -115,8 +115,9 @@ fn publish_serves_a_verifiable_signature() {
     assert_eq!(body(&raw_get(&s, "/latest.json", &[])), "{}");
     let sig = raw_get(&s, "/latest.json.sig", &[]);
     assert_eq!(
-        verify_manifest(b"{}", body(&sig).as_bytes(), &[k.key_line()]),
-        Ok(())
+        verify_manifest(b"{}", body(&sig).as_bytes(), &[k.key_line()])
+            .map(|v| v.as_bytes().to_vec()),
+        Ok(b"{}".to_vec())
     );
 }
 

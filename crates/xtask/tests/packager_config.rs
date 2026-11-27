@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use serde_json::{Value, json};
-use xtask::packager_config::{Signing, packager_config, write_private};
+use xtask::packager_config::{Signing, packager_config};
 
 const NOTICES: &str = "/n/THIRD-PARTY-NOTICES.html";
 
@@ -140,6 +140,7 @@ fn a_missing_package_or_section_is_an_error() {
 #[test]
 fn write_private_leaves_an_owner_only_file() {
     use std::os::unix::fs::PermissionsExt;
+    use xtask::packager_config::write_private;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("packager-config.json");
     std::fs::write(&path, "old").unwrap();

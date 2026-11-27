@@ -46,7 +46,7 @@ fn install_hands_off_the_nsis_installer() {
     let dir = tempfile::tempdir().unwrap();
     let st = stage(dir.path(), "nsis", NEW);
     let program = dir.path().join(SETUP);
-    let args = vec![OsString::from("/P"), OsString::from("/R")];
+    let args = vec![OsString::from("/P")];
     assert_eq!(
         install(&InstallKind::WindowsNsis, st),
         Ok(Relaunch::Installer {

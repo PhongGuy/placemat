@@ -60,3 +60,16 @@ pub fn start(cx: &mut App, path: Option<PathBuf>) -> gpui_kit::Result<AnyWindowH
     })?;
     Ok(window)
 }
+
+/// The app-wide setup the binary and the pilot host both run after the theme: the updater
+/// and the one quit hook.
+pub fn init(cx: &mut App) {
+    crate::updates::init(cx);
+    cx.on_app_quit(|cx| {
+        // GPUI waits 200 ms at most for a quit future, so the work runs in this body.
+        // An edit flush, once boards are edited, goes here, before the install.
+        crate::updates::quit(cx);
+        async {}
+    })
+    .detach();
+}

@@ -121,7 +121,8 @@ fn swap(staged: &Path, target: &Path) -> Result<(), InstallError> {
 }
 
 /// Windows runs only a file named like an executable, so the installer is renamed to an
-/// `-setup.exe` beside where it was staged; `/P /R` makes it passive and relaunch the app.
+/// `-setup.exe` beside where it was staged. `/P` makes it passive; the app adds `/R` only to
+/// relaunch.
 fn hand_off_installer(staged: &Staged) -> Result<Relaunch, InstallError> {
     let path = staged.path();
     if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
@@ -137,6 +138,6 @@ fn hand_off_installer(staged: &Staged) -> Result<Relaunch, InstallError> {
         let _ = std::fs::remove_file(path);
         failed(&program, &program, e)
     })?;
-    let args = vec![OsString::from("/P"), OsString::from("/R")];
+    let args = vec![OsString::from("/P")];
     Ok(Relaunch::Installer { program, args })
 }

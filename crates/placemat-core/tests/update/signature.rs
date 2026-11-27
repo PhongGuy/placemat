@@ -9,8 +9,8 @@ const M: &[u8] = b"{\"version\":\"1.0.0\"}";
 fn verify_accepts_a_release_style_signature() {
     let k = TestKey::generate();
     assert_eq!(
-        verify_manifest(M, k.sign(M).as_bytes(), &[k.key_line()]),
-        Ok(())
+        verify_manifest(M, k.sign(M).as_bytes(), &[k.key_line()]).map(|v| v.as_bytes().to_vec()),
+        Ok(M.to_vec())
     );
 }
 
@@ -18,8 +18,14 @@ fn verify_accepts_a_release_style_signature() {
 fn verify_accepts_any_listed_key() {
     let (old, new) = (TestKey::generate(), TestKey::generate());
     let keys = [old.key_line(), new.key_line()];
-    assert_eq!(verify_manifest(M, old.sign(M).as_bytes(), &keys), Ok(()));
-    assert_eq!(verify_manifest(M, new.sign(M).as_bytes(), &keys), Ok(()));
+    assert_eq!(
+        verify_manifest(M, old.sign(M).as_bytes(), &keys).map(|v| v.as_bytes().to_vec()),
+        Ok(M.to_vec())
+    );
+    assert_eq!(
+        verify_manifest(M, new.sign(M).as_bytes(), &keys).map(|v| v.as_bytes().to_vec()),
+        Ok(M.to_vec())
+    );
 }
 
 #[test]
@@ -27,7 +33,10 @@ fn verify_ignores_whitespace_around_signature_and_key() {
     let k = TestKey::generate();
     let sig = format!("{}\n", k.sign(M));
     let key = format!("  {}\r\n", k.key_line());
-    assert_eq!(verify_manifest(M, sig.as_bytes(), &[key]), Ok(()));
+    assert_eq!(
+        verify_manifest(M, sig.as_bytes(), &[key]).map(|v| v.as_bytes().to_vec()),
+        Ok(M.to_vec())
+    );
 }
 
 #[test]
@@ -44,7 +53,10 @@ fn verify_skips_malformed_key_line() {
     let k = TestKey::generate();
     let sig = k.sign(M);
     let keys = ["garbage".to_owned(), "aGVsbG8=".to_owned(), k.key_line()];
-    assert_eq!(verify_manifest(M, sig.as_bytes(), &keys), Ok(()));
+    assert_eq!(
+        verify_manifest(M, sig.as_bytes(), &keys).map(|v| v.as_bytes().to_vec()),
+        Ok(M.to_vec())
+    );
     assert_eq!(
         verify_manifest(M, sig.as_bytes(), &keys[..2]),
         Err(CheckError::UnknownKey)

@@ -7,15 +7,41 @@ use minisign_verify::{Error, PublicKey, Signature};
 
 use super::CheckError;
 
+/// Manifest bytes whose signature [`verify_manifest`] accepted, borrowed from the buffer it
+/// checked. Only `verify_manifest` builds one, so [`evaluate`](super::evaluate) never parses
+/// unverified bytes.
+///
+/// ```
+/// use placemat_core::update::Verified;
+/// fn len(v: Verified<'_>) -> usize { v.as_bytes().len() }
+/// ```
+///
+/// ```compile_fail
+/// let forged = placemat_core::update::Verified { bytes: b"{}" };
+/// ```
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Verified<'a> {
+    bytes: &'a [u8],
+}
+
+impl Verified<'_> {
+    /// The verified manifest bytes, exactly as they were checked.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes
+    }
+}
+
 /// Verifies `manifest` against the `latest.json.sig` body (base64 of a minisign signature box,
 /// surrounding whitespace ignored) with each key line (base64 of a minisign public key box).
 /// A malformed, legacy or failing signature is [`CheckError::ManifestSignature`]; one whose
-/// key id matches no decodable key is [`CheckError::UnknownKey`].
-pub fn verify_manifest(
-    manifest: &[u8],
+/// key id matches no decodable key is [`CheckError::UnknownKey`]. On success the same bytes
+/// come back as [`Verified`].
+pub fn verify_manifest<'a>(
+    manifest: &'a [u8],
     sig_file: &[u8],
     keys: &[String],
-) -> Result<(), CheckError> {
+) -> Result<Verified<'a>, CheckError> {
     let signature = unbox(sig_file)
         .and_then(|text| Signature::decode(&text).ok())
         .ok_or_else(|| {
@@ -29,7 +55,7 @@ pub fn verify_manifest(
             continue;
         };
         match key.verify(manifest, &signature, false) {
-            Ok(()) => return Ok(()),
+            Ok(()) => return Ok(Verified { bytes: manifest }),
             Err(Error::UnexpectedKeyId) => continue,
             Err(e) => return Err(CheckError::ManifestSignature(mid_sentence(&e.to_string()))),
         }

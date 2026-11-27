@@ -40,6 +40,24 @@ impl TestKey {
     }
 }
 
+use placemat_core::update::{CheckError, evaluate, verify_manifest};
+
+/// Signs `manifest` with a throwaway key and evaluates the verified bytes, as `check` does.
+pub fn signed_evaluate(
+    manifest: &[u8],
+    cfg: &UpdateConfig,
+) -> Result<Option<Available>, CheckError> {
+    let k = TestKey::generate();
+    let sig = k.sign(manifest);
+    let verified = verify_manifest(manifest, sig.as_bytes(), &[k.key_line()]).unwrap();
+    assert_eq!(
+        verified.as_bytes(),
+        manifest,
+        "verify keeps the exact buffer"
+    );
+    evaluate(verified, cfg)
+}
+
 /// `sig_file` with its algorithm re-tagged from prehashed `ED` to legacy `Ed`, every other
 /// byte kept, so only the algorithm check can refuse it.
 pub fn retag_legacy(sig_file: &str) -> String {

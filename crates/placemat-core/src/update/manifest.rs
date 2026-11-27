@@ -6,7 +6,7 @@ use semver::Version;
 use serde::Deserialize;
 
 use super::config::url_allowed;
-use super::{Available, CheckError, Format, UpdateConfig};
+use super::{Available, CheckError, Format, UpdateConfig, Verified};
 
 // Unknown fields are ignored so later manifests can add to the format.
 #[derive(Deserialize)]
@@ -24,15 +24,19 @@ struct Entry {
     sha256: String,
 }
 
-/// Applies the manifest rules to verified `manifest` bytes: a stable release strictly newer
-/// than `cfg.current_version()` is `Some`, with the entry for `cfg.target_id()`; an older or
-/// equal one is `None`. A malformed document, a pre-release or a bad entry is
+/// Applies the manifest rules to the [`Verified`] `manifest` bytes: a stable release strictly
+/// newer than `cfg.current_version()` is `Some`, with the entry for `cfg.target_id()`; an older
+/// or equal one is `None`. A malformed document, a pre-release or a bad entry is
 /// [`CheckError::ManifestInvalid`]; a newer release without this target is
 /// [`CheckError::NoEntryForTarget`].
-pub fn evaluate(manifest: &[u8], cfg: &UpdateConfig) -> Result<Option<Available>, CheckError> {
+pub fn evaluate(
+    manifest: Verified<'_>,
+    cfg: &UpdateConfig,
+) -> Result<Option<Available>, CheckError> {
     // Messages quote echoed manifest text with `{:?}`, so no control character survives.
     let invalid = CheckError::ManifestInvalid;
-    let doc: Manifest = serde_json::from_slice(manifest).map_err(|e| invalid(e.to_string()))?;
+    let doc: Manifest =
+        serde_json::from_slice(manifest.as_bytes()).map_err(|e| invalid(e.to_string()))?;
     let remote = Version::parse(&doc.version)
         .map_err(|e| invalid(format!("version {:?}: {e}", doc.version)))?;
     if !remote.pre.is_empty() {

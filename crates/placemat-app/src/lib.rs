@@ -7,4 +7,5 @@ pub mod launch;
 pub mod main_view;
 pub mod theme;
 pub mod ui;
+pub mod updates;
 pub mod viewer;

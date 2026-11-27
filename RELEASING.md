@@ -9,7 +9,7 @@ No leg of the workflow has run on real runners yet. Its artifact names, signing 
 ## Before the first release
 
 - **An app icon.** linuxdeploy, the `.dmg` and the NSIS installer all want one, and none is committed yet. Add the sources and exports under `assets/icon/`, list them as `icons` in `crates/placemat-app/Cargo.toml`'s packager section, and add the 256 px export to the `.deb` layout check in `scripts/package-linux.sh`.
-- **The in-app updater.** The release already writes and signs the manifest the updater reads, and `placemat-core` already holds its feed and keys, but the app does not check for updates yet. Users of a release without it update by hand.
+- **The in-app updater.** The release writes and signs the manifest, and `placemat-core::update` checks it, downloads and verifies the artifact, and installs it (AppImage swap, macOS bundle swap, NSIS hand-off). The app does not call it yet, so users of a release without the app layer update by hand.
 
 ## Who acts
 

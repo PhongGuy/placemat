@@ -16,6 +16,7 @@ fastrand.workspace = true
 minisign-verify.workspace = true
 roughr.workspace = true
 thiserror.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 kdl.workspace = true

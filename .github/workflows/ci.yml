@@ -1,7 +1,8 @@
 # The gate on every push to master and every pull request. The Linux job runs what `make check`
 # runs locally, with a locked Cargo.lock, plus the workflow lint, the script tests, the icons
 # and the notices. macOS runs clippy only, and the pilot job drives the app through the headless
-# gpui-pilot scenarios on software Vulkan.
+# gpui-pilot scenarios on software Vulkan. A manual run with `windows` ticked also runs clippy and
+# the core updater tests on windows-latest.
 name: CI
 
 on:
@@ -9,12 +10,17 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      windows:
+        description: Also run clippy and the updater tests on windows-latest
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -115,6 +121,35 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -Dwarnings
+
+  windows:
+    if: inputs.windows
+    runs-on: windows-latest
+    # ASSUMED until the first run is measured.
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: clippy
+      # A rare manual job reads the shared caches but never saves, so it cannot evict the gate's.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -Dwarnings
+      # Only the updater tests: a Windows checkout rewrites line endings, which breaks the
+      # golden fixtures the other suites compare byte for byte.
+      - name: Updater tests
+        run: |
+          cargo test --locked -p placemat-core --test update --test update_keys
+          cargo test --locked -p placemat-core --lib update::
 
   pilot:
     runs-on: ubuntu-26.04

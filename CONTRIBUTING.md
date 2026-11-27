@@ -62,6 +62,7 @@ Every push to `master` and every pull request runs `.github/workflows/ci.yml`:
 - **gate:** `make workflows-lint script-test check windows-check notices-check` with `LOCKED=--locked`, so a stale `Cargo.lock` fails.
 - **macos-clippy:** clippy on macOS.
 - **pilot:** `make pilot-check` against gpui-pilot on software Vulkan.
+- **windows** (manual): run the workflow from the Actions tab with `windows` ticked for clippy on the whole workspace and the core updater tests on `windows-latest`.
 
 `zizmor.yml` audits the workflows on every push to `master` and every pull request, and `attribution.yml` fails a pull request whose title, body or commits credit an AI agent. On a schedule, `advisories.yml` scans both lockfiles daily and `weekly.yml` runs clippy on beta and a check after `cargo update`.
 

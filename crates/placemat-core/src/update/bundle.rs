@@ -385,6 +385,22 @@ mod tests {
         assert!(!archive.exists(), "the refused archive is removed");
     }
 
+    // A link at the staged name could point the install at a file swapped in after verification.
+    #[test]
+    fn bundle_refuses_symlinked_archive() {
+        let (dir, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let bundle = bundle_in(dir.path());
+        let target = other.path().join("good.tar.gz");
+        std::fs::write(&target, good("Placemat.app")).unwrap();
+        let link = dir.path().join(format!("placemat-update-{V}.app.tar.gz"));
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let got = install_bundle(&link, V, &bundle);
+        assert!(matches!(got, Err(InstallError::Io { .. })), "{got:?}");
+        assert_eq!(exe(&bundle), b"old exe");
+        assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
+        assert!(target.exists(), "the link's target is left alone");
+    }
+
     #[test]
     fn bundle_refuses_unwritable_parent() {
         let dir = tempfile::tempdir().unwrap();
@@ -473,6 +489,14 @@ mod tests {
     fn bundle_refuses_second_top_dir() {
         assert_refused(vec![
             ("two bundles", tarball(&[TOP, E::Dir("Second.app/")])),
+            (
+                "top is nested",
+                tarball(&[E::Dir("Placemat.app/Contents/")]),
+            ),
+            (
+                "top is not an app",
+                tarball(&[E::Dir("Placemat/"), E::File("Placemat/x", b"x", 0o644)]),
+            ),
             (
                 "bundle is a file",
                 tarball(&[E::File("Placemat.app", b"x", 0o755)]),

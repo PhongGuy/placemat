@@ -26,6 +26,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "sy
 serde_json = "1"
 toml = "1"
 tempfile = "3"
+png = "0.18"
 
 # Headless frame numbers need an optimised host and app.
 [profile.dev.package."*"]

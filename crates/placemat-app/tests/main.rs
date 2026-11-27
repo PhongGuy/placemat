@@ -15,4 +15,5 @@ mod paint;
 mod update_launch;
 mod update_model;
 mod update_quit;
+mod update_text;
 mod window;

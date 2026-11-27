@@ -16,6 +16,12 @@ That builds and opens the app, the same as `cargo run -p placemat-app`. `cargo b
 
 `make install` puts `placemat` in `~/.cargo/bin` (or `PREFIX=<dir>` for `<dir>/bin`) and, on Linux, adds a desktop entry and icons under `~/.local/share`. `make uninstall` removes them.
 
+## Updates
+
+A release build checks GitHub for a newer release at launch and then every 24 hours while it runs. Each check fetches `latest.json` and its signature from the project's GitHub releases. The request sends your IP address and the User-Agent `placemat/<version>`, with only the `accept`, `accept-encoding` and `host` headers besides and no query string. Nothing else is sent. When a newer release exists, the app shows a notice; the release itself is downloaded only when you click Install, and it replaces the app when you quit.
+
+Set `PLACEMAT_NO_UPDATE_CHECK=1` in the environment to turn the check off. Builds from source, `make install` included, never check unless `PLACEMAT_UPDATE_MANIFEST_URL` points them at a test feed.
+
 ## Contributing
 
 Issues and pull requests from anyone are welcome, first ones included, and I'll help get a pull request over the line. Building from source, the layout, the checks, CI, the conventions for issues and pull requests, and the gpui-pilot setup are in [CONTRIBUTING.md](CONTRIBUTING.md).

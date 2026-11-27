@@ -3,6 +3,7 @@
 
 mod model;
 mod quit;
+mod text;
 
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ use placemat_core::update::{
 
 pub use model::{Armed, Notice, Offer, UpdateModel};
 pub use quit::{Launcher, QuitInstall, SystemLauncher, install_at_quit, relaunch_command};
+pub use text::notice_text;
 
 /// How long the checker waits between feed checks.
 const CHECK_EVERY: Duration = Duration::from_secs(24 * 60 * 60);

@@ -220,3 +220,22 @@ fn the_canvas_node_is_named_board_canvas_for_session_trees() {
     assert_eq!(node.author_id(), Some("board-canvas"));
     assert_eq!(node.label(), Some("Board"));
 }
+
+#[test]
+fn a_leaf_name_shows_hidden_characters_as_tags() {
+    let mut board = canonical("rect.board");
+    let id = ElementId::new("3kTq8wZp").unwrap();
+    let mut name = |label: &str| {
+        board.set_label(&id, Some(label.to_owned())).unwrap();
+        leaf_name(board.get(&id).unwrap())
+    };
+    assert_eq!(name("report\u{202E}txt.exe"), "report<U+202E>txt.exe");
+    assert_eq!(name("a\tb\r\nsecond"), "a b");
+    assert_eq!(name("a\rb"), "a<U+000D>b");
+    assert_eq!(name("\u{645}\u{631}\u{200F}"), "\u{645}\u{631}\u{200F}");
+    assert_eq!(
+        name("\u{202E}".repeat(300).as_str()),
+        "<U+202E>".repeat(256),
+        "cap the source, then expand"
+    );
+}

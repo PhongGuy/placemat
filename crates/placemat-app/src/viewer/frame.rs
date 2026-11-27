@@ -4,6 +4,7 @@
 use gpui_kit::accesskit::{self, Role};
 use placemat_core::board::{Board, Element, ElementId, Kind};
 use placemat_core::scene::{Camera, Detail, Rect, Scene, Visible, detail};
+use placemat_core::text;
 
 /// A visible element placed on the canvas.
 #[non_exhaustive]
@@ -65,8 +66,8 @@ pub fn leaf_role(kind: &Kind) -> Role {
 /// The longest leaf name, in chars.
 const NAME_MAX_CHARS: usize = 256;
 
-/// The first line of the element's label or content, cut to 256 chars; `<Kind> <id>` when it
-/// has none or it is empty.
+/// The first line of the element's label or content, cut to 256 source chars with hidden code
+/// points shown as tags; `<Kind> <id>` when it has none or it is empty.
 pub fn leaf_name(e: &Element) -> String {
     let (kind, text) = match &e.kind {
         Kind::Rect(b) => ("Rect", b.label.as_deref()),
@@ -85,7 +86,8 @@ pub fn leaf_name(e: &Element) -> String {
     if first.is_empty() {
         format!("{kind} {}", e.id.as_str())
     } else {
-        first.chars().take(NAME_MAX_CHARS).collect()
+        let capped: String = first.chars().take(NAME_MAX_CHARS).collect();
+        text::display(&capped)
     }
 }
 

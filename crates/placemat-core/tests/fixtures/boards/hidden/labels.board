@@ -1,0 +1,30 @@
+placemat-board version=0
+
+rect "hidRlo01" {
+    at 0 0
+    seed 1
+    size 600 120
+    fill none
+    stroke "#e03131" width=2 roughness=0 dash=solid
+    label "report\u{202e}txt.exe"
+    z "a1"
+}
+
+rect "hidTags1" {
+    at 0 200
+    seed 2
+    size 1200 120
+    fill none
+    stroke "#e03131" width=2 roughness=0 dash=solid
+    label "\u{202e}\u{202e}\u{202e}\u{202e}\u{202e}\u{202e}\u{202e}\u{202e}"
+    z "a2"
+}
+
+text "hidText1" {
+    at 0 400
+    seed 3
+    content "مرحبا\u{200f} \u{1f3f4}\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}"
+    font family=normal size=20 align=left
+    stroke "#e03131" width=2 roughness=0 dash=solid
+    z "a3"
+}

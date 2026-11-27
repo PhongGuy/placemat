@@ -1,7 +1,7 @@
 //! The per-frame instance budget: how much detail and which labels a frame can afford before
 //! GPUI's instance buffer overflows.
 
-use placemat_core::scene::{Detail, Rect};
+use placemat_core::scene::{Detail, LabelLine, Rect};
 
 /// The most label glyphs one frame paints: 7 MiB of 112-byte sprites.
 pub const GLYPHS_MAX: usize = 65_536;
@@ -14,13 +14,19 @@ pub const CURVES_PER_SEGMENT: u64 = 5;
 /// The most curves each open subpath adds once stroked: two butt caps and the close.
 pub const CURVES_PER_SUBPATH: u64 = 3;
 
-/// The non-whitespace chars of a label: one glyph sprite each.
-pub fn label_cost(lines: &[String]) -> usize {
+/// Glyph slots one tag's background quad is charged: two 112-byte sprites hold a 160-byte quad.
+pub const QUAD_GLYPHS: usize = 2;
+
+/// The non-whitespace chars of a label, one glyph sprite each, plus [`QUAD_GLYPHS`] for each
+/// tag's background quad.
+pub fn label_cost(lines: &[LabelLine]) -> usize {
     lines
         .iter()
-        .flat_map(|l| l.chars())
-        .filter(|c| !c.is_whitespace())
-        .count()
+        .map(|l| {
+            let glyphs = l.text.chars().filter(|c| !c.is_whitespace()).count();
+            glyphs.saturating_add(l.hidden.len().saturating_mul(QUAD_GLYPHS))
+        })
+        .fold(0, usize::saturating_add)
 }
 
 /// The most curves a filled cubic of control polygon `len_px` logical pixels becomes.
@@ -206,6 +212,7 @@ mod tests {
     use std::mem::size_of;
 
     use gpui_kit::{MonochromeSprite, PathCurve, PathPaint, PathTile, Quad};
+    use placemat_core::scene::LabelLine;
 
     use super::*;
 
@@ -267,9 +274,19 @@ mod tests {
     }
 
     #[test]
-    fn label_cost_counts_non_whitespace_chars() {
-        let lines = ["a b".to_owned(), " \tcé ".to_owned()];
+    fn label_cost_counts_non_whitespace_chars_and_one_quad_per_tag() {
+        let lines = [LabelLine::new("a b"), LabelLine::new(" \tcé ")];
         assert_eq!(label_cost(&lines), 4, "{lines:?}");
+        let tagged = [LabelLine::new("a\u{202E}")];
+        assert_eq!(label_cost(&tagged), 1 + 8 + QUAD_GLYPHS, "{tagged:?}");
+    }
+
+    #[test]
+    fn a_tag_quad_fits_in_the_glyph_slots_it_is_charged() {
+        assert!(
+            QUAD_GLYPHS * size_of::<MonochromeSprite>() >= size_of::<Quad>(),
+            "a quad is charged at least its bytes"
+        );
     }
 
     #[test]

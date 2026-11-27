@@ -12,13 +12,15 @@ mod config;
 mod download;
 mod error;
 mod fetch;
+mod install;
 mod manifest;
 mod sign;
 
 pub use config::{RELEASE_BUILD, build_config, build_config_with, target_id};
 pub use download::{download, sweep_staged};
-pub use error::{CheckError, DownloadError};
+pub use error::{CheckError, DownloadError, InstallError};
 pub use fetch::check;
+pub use install::{InstallKind, Reason, install_kind, staging_dir};
 pub use manifest::evaluate;
 pub use sign::verify_manifest;
 

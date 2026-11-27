@@ -8,6 +8,11 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the bundle has no caller until install exists")
+)]
+mod bundle;
 mod config;
 mod download;
 mod error;

@@ -59,7 +59,7 @@ From a checkout, `make run` builds with 4 jobs (`make JOBS=8 run` for more) and 
 
 Every push to `master` and every pull request runs `.github/workflows/ci.yml`:
 
-- **gate:** `make workflows-lint script-test check notices-check` with `LOCKED=--locked`, so a stale `Cargo.lock` fails.
+- **gate:** `make workflows-lint script-test check windows-check notices-check` with `LOCKED=--locked`, so a stale `Cargo.lock` fails.
 - **macos-clippy:** clippy on macOS.
 - **pilot:** `make pilot-check` against gpui-pilot on software Vulkan.
 

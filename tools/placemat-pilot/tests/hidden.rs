@@ -11,10 +11,13 @@ use serde_json::{Value, json};
 
 /// The launch width in logical pixels (`common::launch_args`).
 const WINDOW_W: f64 = 1280.0;
-/// The dark theme's `muted.background`, which every tag sits on.
+/// The dark theme's `muted.background`.
 const MUTED: [u8; 3] = [0x14, 0x14, 0x18];
 /// The light theme's `muted.background`.
 const MUTED_LIGHT: [u8; 3] = [0xF7, 0xF7, 0xF9];
+/// How far a band pixel may stray from `muted`. The band is a solid fill, so a tight match
+/// keeps glyph and emoji antialiasing that blends through `muted` out of the count.
+const BAND_TOL: u8 = 1;
 
 /// A decoded screenshot: 8-bit samples, `samples` per pixel, rows `line` bytes apart.
 struct Shot {
@@ -92,8 +95,8 @@ async fn tags_show(appearance: &str, muted: [u8; 3]) {
     let path = dir.path().join(format!("hidden-{appearance}.png"));
     pilot.ok("screenshot", json!({"save_to": path})).await;
     let shot = decode(&path);
-    let tags = near(&shot, rect(by("shape-hidTags1")), muted, 3);
-    let plain = near(&shot, rect(by("shape-hidText1")), muted, 3);
+    let tags = near(&shot, rect(by("shape-hidTags1")), muted, BAND_TOL);
+    let plain = near(&shot, rect(by("shape-hidText1")), muted, BAND_TOL);
     assert!(
         tags >= 500,
         "the background pass paints the tag band: {tags} muted pixels"

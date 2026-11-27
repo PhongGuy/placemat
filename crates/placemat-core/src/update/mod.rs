@@ -9,9 +9,13 @@ use base64::engine::general_purpose::STANDARD;
 
 mod config;
 mod error;
+mod manifest;
+mod sign;
 
 pub use config::{RELEASE_BUILD, build_config, build_config_with, target_id};
 pub use error::CheckError;
+pub use manifest::evaluate;
+pub use sign::verify_manifest;
 
 /// The marker line `assets/update/keys.txt` held before a real key existed. A release build
 /// refuses to compile with it (see this crate's build script), and so does [`trusted_keys`].
@@ -102,6 +106,18 @@ impl Os {
     }
 }
 
+/// How a release artifact is packaged.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// A Linux AppImage (`appimage`).
+    AppImage,
+    /// A macOS app bundle, shipped as `.app.tar.gz` (`app`).
+    App,
+    /// A Windows NSIS installer (`nsis`).
+    Nsis,
+}
+
 /// Network time limits for the update check and the artifact download.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,5 +196,49 @@ impl UpdateConfig {
     pub fn with_timeouts(mut self, timeouts: Timeouts) -> Self {
         self.timeouts = timeouts;
         self
+    }
+}
+
+/// A newer stable release with an artifact for this build's target.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Available {
+    version: String,
+    pub_date: Option<String>,
+    format: Format,
+    url: String,
+    sha256: String,
+    size: u64,
+}
+
+impl Available {
+    /// The release version.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// The publication time, as the manifest states it.
+    pub fn pub_date(&self) -> Option<&str> {
+        self.pub_date.as_deref()
+    }
+
+    /// How the artifact is packaged.
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
+    /// Where the artifact downloads from.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// The artifact's SHA-256, 64 lowercase hex characters.
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    /// The artifact's size in bytes.
+    pub fn size(&self) -> u64 {
+        self.size
     }
 }

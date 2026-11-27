@@ -15,9 +15,13 @@ base64.workspace = true
 fastrand.workspace = true
 minisign-verify.workspace = true
 roughr.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 url.workspace = true
 
 [dev-dependencies]
 kdl.workspace = true
+minisign.workspace = true
 tempfile.workspace = true

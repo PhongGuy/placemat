@@ -129,7 +129,12 @@ pub(crate) fn url_allowed(url: &str, allow_loopback_http: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_one;
+    use super::{is_one, url_allowed};
+
+    #[test]
+    fn loopback_http_needs_the_allowance() {
+        assert!(!url_allowed("http://127.0.0.1:9/x", false));
+    }
 
     #[test]
     fn the_release_flag_is_exactly_one() {

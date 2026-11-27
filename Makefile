@@ -8,7 +8,7 @@ JOBS ?= 4
 LOCKED :=
 
 .DEFAULT_GOAL := run
-.PHONY: run install uninstall check advisories fmt fmt-check lint test pilot-check pilot-check-ci pilot-perf icons-check notices-check script-test package clean workflows-lint
+.PHONY: run install uninstall check advisories fmt fmt-check lint test pilot-check pilot-check-ci pilot-perf icons-check notices-check script-test package clean workflows-lint windows-check
 
 run:
 	CARGO_BUILD_JOBS="$(JOBS)" $(CARGO) run -p placemat-app
@@ -83,3 +83,9 @@ clean:
 
 workflows-lint:
 	scripts/actionlint.sh
+
+# Lint the core's Windows-only (cfg(not(unix))) code from Linux. Core only: the GUI crates need
+# mingw's windres, so CI's opt-in Windows job covers them. Needs the x86_64-pc-windows-gnu target
+# and a mingw C compiler for ring.
+windows-check:
+	$(CARGO) clippy $(LOCKED) -p placemat-core --all-targets --all-features --target x86_64-pc-windows-gnu -- -Dwarnings

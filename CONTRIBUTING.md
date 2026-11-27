@@ -50,17 +50,19 @@ From a checkout, `make run` builds with 4 jobs (`make JOBS=8 run` for more) and 
 | `make pilot-check` | Builds and runs the gpui-pilot scenarios in `tools/placemat-pilot`, which drive the real app. |
 | `make script-test` | The bash suites under `scripts/tests`. |
 | `make workflows-lint` | actionlint over `.github/workflows`. |
+| `make windows-check` | Clippy on `placemat-core` for `x86_64-pc-windows-gnu`, so Windows-only code is linted from Linux. Needs that rustup target and the mingw-w64 C compiler. |
 | `make notices-check` | Renders the third-party notices with `cargo-about` 0.9.2 and fails on a licence `about.toml` does not accept. |
 | `make package` | The Linux `.deb` and AppImage, verified, in `target/dist/linux`. Needs `cargo-packager` 0.11.8. |
 | `make run` | Builds and opens the app. |
 
 ## CI
 
-Every push to `master` and every pull request runs `.github/workflows/ci.yml`:
+Every push to `master` and every pull request runs the gate, macos-clippy and pilot jobs of `.github/workflows/ci.yml`, and a manual run can add the windows job:
 
-- **gate:** `make workflows-lint script-test check notices-check` with `LOCKED=--locked`, so a stale `Cargo.lock` fails.
+- **gate:** `make workflows-lint script-test check windows-check notices-check` with `LOCKED=--locked`, so a stale `Cargo.lock` fails.
 - **macos-clippy:** clippy on macOS.
 - **pilot:** `make pilot-check` against gpui-pilot on software Vulkan.
+- **windows** (manual): run the workflow from the Actions tab with `windows` ticked for clippy on the whole workspace and the core updater tests on `windows-latest`.
 
 `zizmor.yml` audits the workflows on every push to `master` and every pull request, and `attribution.yml` fails a pull request whose title, body or commits credit an AI agent. On a schedule, `advisories.yml` scans both lockfiles daily and `weekly.yml` runs clippy on beta and a check after `cargo update`.
 

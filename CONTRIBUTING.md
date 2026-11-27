@@ -57,7 +57,7 @@ From a checkout, `make run` builds with 4 jobs (`make JOBS=8 run` for more) and 
 
 ## CI
 
-Every push to `master` and every pull request runs `.github/workflows/ci.yml`:
+Every push to `master` and every pull request runs the gate, macos-clippy and pilot jobs of `.github/workflows/ci.yml`, and a manual run can add the windows job:
 
 - **gate:** `make workflows-lint script-test check windows-check notices-check` with `LOCKED=--locked`, so a stale `Cargo.lock` fails.
 - **macos-clippy:** clippy on macOS.

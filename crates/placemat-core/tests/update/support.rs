@@ -226,3 +226,20 @@ pub fn dead_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.local_addr().unwrap().port()
 }
+
+use placemat_core::update::{UpdateConfig, build_config_with};
+
+/// A non-release config under the test feed override at `url`, trusting `key`.
+pub fn feed_config(url: &str, key: &TestKey, current: &str) -> UpdateConfig {
+    let keys = key.key_line();
+    build_config_with(
+        false,
+        None,
+        Some(url),
+        Some(&keys),
+        "",
+        current,
+        Some(TARGET),
+    )
+    .unwrap()
+}

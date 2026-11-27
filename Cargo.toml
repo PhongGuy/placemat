@@ -41,6 +41,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.152"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls", "platform-verifier"] }
 url = "2.5.8"
 
 # The session app under gpui-pilot: dev, but optimised so frame timings mean something.

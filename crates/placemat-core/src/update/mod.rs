@@ -9,11 +9,13 @@ use base64::engine::general_purpose::STANDARD;
 
 mod config;
 mod error;
+mod fetch;
 mod manifest;
 mod sign;
 
 pub use config::{RELEASE_BUILD, build_config, build_config_with, target_id};
 pub use error::CheckError;
+pub use fetch::check;
 pub use manifest::evaluate;
 pub use sign::verify_manifest;
 

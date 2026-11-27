@@ -2,5 +2,7 @@
 //! in at quit.
 
 mod model;
+mod quit;
 
 pub use model::{Armed, Notice, Offer, UpdateModel};
+pub use quit::{Launcher, QuitInstall, SystemLauncher, install_at_quit, relaunch_command};

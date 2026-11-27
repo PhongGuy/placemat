@@ -59,3 +59,166 @@ pub fn manifest(version: &str, format: &str, url: &str, sha: &str) -> String {
           "targets":{{"{TARGET}":{{"url":"{url}","format":"{format}","size":3,"sha256":"{sha}","more":true}}}}}}"#
     )
 }
+
+use std::collections::HashMap;
+use std::io::{BufRead as _, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// What the loopback server answers for one path.
+#[derive(Clone)]
+pub enum Reply {
+    Body(Vec<u8>),
+    Status(u16),
+    Redirect(String),
+    Slow(Duration, Vec<u8>),
+    /// Close the connection without answering.
+    Hangup,
+}
+
+/// One request as the server read it; header names are lowercased.
+#[derive(Clone, Debug)]
+pub struct Seen {
+    pub path: String,
+    pub query: Option<String>,
+    pub headers: Vec<(String, String)>,
+}
+
+impl Seen {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    pub fn names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.headers.iter().map(|(n, _)| n.as_str()).collect();
+        names.sort_unstable();
+        names
+    }
+}
+
+type Routes = Arc<Mutex<HashMap<String, Reply>>>;
+
+/// An HTTP/1.1 server on 127.0.0.1 that answers each path with its `Reply` (404 when none is
+/// set), one thread per connection, and records every request it reads.
+pub struct Server {
+    base: String,
+    routes: Routes,
+    seen: Arc<Mutex<Vec<Seen>>>,
+}
+
+impl Server {
+    pub fn start() -> Server {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let routes: Routes = Arc::default();
+        let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
+        let (r, s) = (Arc::clone(&routes), Arc::clone(&seen));
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let (r, s) = (Arc::clone(&r), Arc::clone(&s));
+                std::thread::spawn(move || serve(&stream, &r, &s));
+            }
+        });
+        Server { base, routes, seen }
+    }
+
+    pub fn url(&self, path: &str) -> String {
+        format!("{}{path}", self.base)
+    }
+
+    pub fn route(&self, path: &str, reply: Reply) {
+        self.routes.lock().unwrap().insert(path.to_owned(), reply);
+    }
+
+    pub fn seen(&self) -> Vec<Seen> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+fn serve(stream: &TcpStream, routes: &Mutex<HashMap<String, Reply>>, seen: &Mutex<Vec<Seen>>) {
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+        return;
+    }
+    let target = line.split_whitespace().nth(1).unwrap_or("/").to_owned();
+    let (path, query) = match target.split_once('?') {
+        Some((p, q)) => (p.to_owned(), Some(q.to_owned())),
+        None => (target, None),
+    };
+    let mut headers = Vec::new();
+    loop {
+        let mut h = String::new();
+        if reader.read_line(&mut h).unwrap_or(0) == 0 {
+            break;
+        }
+        let h = h.trim_end();
+        if h.is_empty() {
+            break;
+        }
+        if let Some((n, v)) = h.split_once(':') {
+            headers.push((n.trim().to_ascii_lowercase(), v.trim().to_owned()));
+        }
+    }
+    seen.lock().unwrap().push(Seen {
+        path: path.clone(),
+        query,
+        headers,
+    });
+    let reply = routes
+        .lock()
+        .unwrap()
+        .get(&path)
+        .cloned()
+        .unwrap_or(Reply::Status(404));
+    let mut out = stream;
+    // A client that hangs up early makes the write fail, which is the client's business.
+    let _ = match reply {
+        Reply::Body(body) => respond(&mut out, 200, None, &body),
+        Reply::Status(code) => respond(&mut out, code, None, b""),
+        Reply::Redirect(to) => respond(&mut out, 302, Some(&to), b""),
+        Reply::Slow(delay, body) => {
+            std::thread::sleep(delay);
+            respond(&mut out, 200, None, &body)
+        }
+        Reply::Hangup => Ok(()),
+    };
+}
+
+fn respond(
+    out: &mut impl Write,
+    code: u16,
+    location: Option<&str>,
+    body: &[u8],
+) -> std::io::Result<()> {
+    let mut head = format!(
+        "HTTP/1.1 {code} Test\r\ncontent-length: {}\r\nconnection: close\r\n",
+        body.len()
+    );
+    if let Some(to) = location {
+        head.push_str(&format!("location: {to}\r\n"));
+    }
+    head.push_str("\r\n");
+    out.write_all(head.as_bytes())?;
+    out.write_all(body)?;
+    out.flush()
+}
+
+/// Serves `manifest` and its signature by `key` at `/latest.json` and `/latest.json.sig`.
+pub fn publish(s: &Server, key: &TestKey, manifest: &str) {
+    s.route("/latest.json", Reply::Body(manifest.as_bytes().to_vec()));
+    s.route(
+        "/latest.json.sig",
+        Reply::Body(key.sign(manifest.as_bytes()).into_bytes()),
+    );
+}
+
+/// A loopback port nothing listens on: bound, read, then closed.
+pub fn dead_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.local_addr().unwrap().port()
+}

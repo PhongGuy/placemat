@@ -5,5 +5,6 @@
 
 mod config;
 mod evaluate;
+mod server;
 mod signature;
 mod support;

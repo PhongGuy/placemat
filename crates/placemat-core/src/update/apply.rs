@@ -114,7 +114,7 @@ fn swap(staged: &Path, target: &Path) -> Result<(), InstallError> {
     std::fs::rename(staged, target).map_err(|e| failed(target, target, e))
 }
 
-/// Off Unix only Linux's AppImage reaches a file swap, so this is a plain rename.
+/// Off Unix no install kind reaches a file swap; this exists only so the crate compiles there.
 #[cfg(not(unix))]
 fn swap(staged: &Path, target: &Path) -> Result<(), InstallError> {
     std::fs::rename(staged, target).map_err(|e| failed(target, target, e))

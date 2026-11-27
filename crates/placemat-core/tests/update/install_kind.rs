@@ -236,14 +236,14 @@ fn staging_dir_is_beside_the_install() {
 fn reasons_name_what_the_user_does() {
     assert_eq!(
         R::SystemPackage.to_string(),
-        "it was installed by your package manager; download the new .deb"
+        "this copy was installed by your package manager; download the new .deb"
     );
     assert_eq!(
         R::ReadOnlyVolume.to_string(),
-        "it runs from the disk image; move Placemat to Applications first"
+        "this copy runs from the disk image; move Placemat to Applications first"
     );
     assert_eq!(
         R::Translocated.to_string(),
-        "macOS runs it from a temporary copy; move Placemat to Applications first"
+        "macOS runs this copy from a temporary location; move Placemat to Applications first"
     );
 }

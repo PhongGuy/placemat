@@ -32,19 +32,19 @@ fn notice_text_per_state_and_reason() {
     let cases = [
         (
             Reason::SourceBuild,
-            "it was built from source, so download releases by hand.",
+            "this copy was built from source, so download releases by hand.",
         ),
         (
             Reason::SystemPackage,
-            "it was installed by your package manager; download the new .deb.",
+            "this copy was installed by your package manager; download the new .deb.",
         ),
         (
             Reason::ReadOnlyVolume,
-            "it runs from the disk image; move Placemat to Applications first.",
+            "this copy runs from the disk image; move Placemat to Applications first.",
         ),
         (
             Reason::Translocated,
-            "macOS runs it from a temporary copy; move Placemat to Applications first.",
+            "macOS runs this copy from a temporary location; move Placemat to Applications first.",
         ),
         (
             Reason::Unrecognised,

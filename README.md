@@ -18,7 +18,7 @@ That builds and opens the app, the same as `cargo run -p placemat-app`. `cargo b
 
 ## Updates
 
-A release build checks GitHub for a newer release at launch and then every 24 hours while it runs. Each check fetches `latest.json` and its signature from the project's GitHub releases. The request sends your IP address and the User-Agent `placemat/<version>`, with only the `accept`, `accept-encoding` and `host` headers besides and no query string. Nothing else is sent. When a newer release exists, the app shows a notice; the release itself is downloaded only when you click Install, and it replaces the app when you quit.
+A release build checks GitHub for a newer release at launch and then every 24 hours while it runs. Each check fetches `latest.json` and its signature from the project's GitHub releases. The request sends your IP address and the User-Agent `placemat/<version>`, with only the `accept`, `accept-encoding` and `host` headers besides and no query string. Nothing else is sent. When a newer release exists, the app shows a notice; the release itself is downloaded only when you click Install. For an install the updater manages, it replaces the app when you quit; otherwise the notice links to the release page.
 
 Set `PLACEMAT_NO_UPDATE_CHECK=1` in the environment to turn the check off. Builds from source, `make install` included, never check unless `PLACEMAT_UPDATE_MANIFEST_URL` points them at a test feed.
 

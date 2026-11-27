@@ -36,17 +36,17 @@ impl InstallKind {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Reason {
-    /// It was built from source rather than by the release workflow.
-    #[error("it was built from source, so download releases by hand")]
+    /// This copy was built from source rather than by the release workflow.
+    #[error("this copy was built from source, so download releases by hand")]
     SourceBuild,
-    /// A system package manager installed it.
-    #[error("it was installed by your package manager; download the new .deb")]
+    /// A system package manager installed this copy.
+    #[error("this copy was installed by your package manager; download the new .deb")]
     SystemPackage,
-    /// It runs from a mounted disk image.
-    #[error("it runs from the disk image; move Placemat to Applications first")]
+    /// This copy runs from a mounted disk image.
+    #[error("this copy runs from the disk image; move Placemat to Applications first")]
     ReadOnlyVolume,
-    /// macOS App Translocation runs it from a temporary copy.
-    #[error("macOS runs it from a temporary copy; move Placemat to Applications first")]
+    /// macOS App Translocation runs this copy from a temporary location.
+    #[error("macOS runs this copy from a temporary location; move Placemat to Applications first")]
     Translocated,
     /// No rule recognises its layout.
     #[error("the updater does not manage this install layout")]

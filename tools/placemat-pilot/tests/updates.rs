@@ -98,7 +98,7 @@ async fn notice_only_for_unowned() {
     assert_eq!(
         node(&tree, "update-notice")["name"],
         json!(
-            "Placemat 99.0.0 is available, but it was built from source, so download releases by hand."
+            "Placemat 99.0.0 is available, but this copy was built from source, so download releases by hand."
         )
     );
     node(&tree, "update-download-page");

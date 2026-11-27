@@ -1,7 +1,7 @@
 //! `download`: the staged name, the size and hash rules, the private `.part`, and cleanup.
 
 use crate::support::{Reply, Server, leftovers, offer, offer_within};
-use placemat_core::update::{DownloadError, Format, download, sweep_staged};
+use placemat_core::update::{DownloadError, Format, download};
 use std::time::Duration;
 
 const BODY: &[u8] = b"new build!";
@@ -190,6 +190,7 @@ fn download_times_out() {
 #[cfg(unix)]
 #[test]
 fn sweep_removes_only_staged_files_and_links() {
+    use placemat_core::update::sweep_staged;
     let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let kept = outside.path().join("kept");
     std::fs::write(&kept, b"keep").unwrap();

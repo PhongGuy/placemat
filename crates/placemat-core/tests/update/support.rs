@@ -151,17 +151,21 @@ fn serve(stream: &TcpStream, routes: &Mutex<HashMap<String, Reply>>, seen: &Mute
         None => (target, None),
     };
     let mut headers = Vec::new();
+    // Read raw bytes so a non-UTF-8 line cannot end the header read, and keep a line without a
+    // colon as a bare name, so every line the client sent shows in `Seen`.
     loop {
-        let mut h = String::new();
-        if reader.read_line(&mut h).unwrap_or(0) == 0 {
+        let mut raw = Vec::new();
+        if reader.read_until(b'\n', &mut raw).unwrap_or(0) == 0 {
             break;
         }
+        let h = String::from_utf8_lossy(&raw);
         let h = h.trim_end();
         if h.is_empty() {
             break;
         }
-        if let Some((n, v)) = h.split_once(':') {
-            headers.push((n.trim().to_ascii_lowercase(), v.trim().to_owned()));
+        match h.split_once(':') {
+            Some((n, v)) => headers.push((n.trim().to_ascii_lowercase(), v.trim().to_owned())),
+            None => headers.push((h.to_ascii_lowercase(), String::new())),
         }
     }
     seen.lock().unwrap().push(Seen {

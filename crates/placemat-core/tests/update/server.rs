@@ -78,6 +78,21 @@ fn server_records_path_query_and_lowercased_headers() {
 }
 
 #[test]
+fn server_records_headers_without_a_colon_or_valid_utf8() {
+    let s = Server::start();
+    let addr = s.url("").trim_start_matches("http://").to_owned();
+    let mut stream = TcpStream::connect(&addr).unwrap();
+    let mut request = b"GET /h HTTP/1.1\r\nhost: h\r\nnocolon\r\nx-bin: ".to_vec();
+    request.extend_from_slice(b"\xff\xfe\r\nx-after: 1\r\n\r\n");
+    stream.write_all(&request).unwrap();
+    stream.read_to_end(&mut Vec::new()).unwrap();
+    let seen = s.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].names(), ["host", "nocolon", "x-after", "x-bin"]);
+    assert_eq!(seen[0].header("x-after"), Some("1"));
+}
+
+#[test]
 fn server_slow_reply_waits_before_answering() {
     let s = Server::start();
     s.route(

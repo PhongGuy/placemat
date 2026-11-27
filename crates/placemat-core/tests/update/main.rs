@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod check;
+mod claim;
 mod config;
 mod download;
 mod evaluate;

@@ -11,6 +11,7 @@ use base64::engine::general_purpose::STANDARD;
 
 mod apply;
 mod bundle;
+mod claim;
 mod config;
 mod download;
 mod error;
@@ -20,8 +21,9 @@ mod manifest;
 mod sign;
 
 pub use apply::install;
+pub use claim::{Claim, sweep_staged};
 pub use config::{RELEASE_BUILD, build_config, build_config_with, target_id};
-pub use download::{download, sweep_staged};
+pub use download::download;
 pub use error::{CheckError, DownloadError, InstallError};
 pub use fetch::check;
 pub use install::{InstallKind, Reason, install_kind, staging_dir};

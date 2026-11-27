@@ -1,7 +1,7 @@
 //! `download`: the staged name, the size and hash rules, the private `.part`, and cleanup.
 
 use crate::support::{Reply, Server, leftovers, offer, offer_within};
-use placemat_core::update::{DownloadError, Format, download, sweep_staged};
+use placemat_core::update::{DownloadError, Format, download};
 use std::time::Duration;
 
 const BODY: &[u8] = b"new build!";
@@ -185,28 +185,4 @@ fn download_times_out() {
         "{:?}",
         leftovers(dir.path())
     );
-}
-
-#[cfg(unix)]
-#[test]
-fn sweep_removes_only_staged_files_and_links() {
-    let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let kept = outside.path().join("kept");
-    std::fs::write(&kept, b"keep").unwrap();
-    for name in [
-        "placemat-update-98.0.0.AppImage",
-        "placemat-update-98.0.0.AppImage.part",
-        "Placemat.AppImage",
-        "notes.txt",
-    ] {
-        std::fs::write(dir.path().join(name), b"x").unwrap();
-    }
-    std::os::unix::fs::symlink(&kept, dir.path().join("placemat-update-link")).unwrap();
-    std::fs::create_dir(dir.path().join("placemat-update-dir")).unwrap();
-    sweep_staged(dir.path());
-    assert_eq!(
-        leftovers(dir.path()),
-        ["Placemat.AppImage", "notes.txt", "placemat-update-dir"]
-    );
-    assert_eq!(std::fs::read(&kept).unwrap(), b"keep");
 }

@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
 
+use super::claim::PREFIX;
 use super::fetch::agent;
 use super::{Available, DownloadError, Format, Staged};
 
 const CHUNK: usize = 64 * 1024;
-const PREFIX: &str = "placemat-update-";
 
 /// Streams the artifact to `<name>.part` in `dir`, then renames it to `<name>`:
 /// `placemat-update-<version>` plus `.AppImage`, `.app.tar.gz` or `.exe`. The `.part` is
@@ -51,23 +51,6 @@ pub fn download(
         sha256: a.sha256.clone(),
         size: a.size,
     })
-}
-
-/// Removes the regular files and links in `dir` whose names start with `placemat-update-`,
-/// best effort; directories and every other name are left alone.
-pub fn sweep_staged(dir: &Path) {
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let ours = entry
-            .file_name()
-            .to_str()
-            .is_some_and(|n| n.starts_with(PREFIX));
-        // lstat, so a link is removed itself and never followed.
-        let plain =
-            std::fs::symlink_metadata(entry.path()).is_ok_and(|m| m.is_file() || m.is_symlink());
-        if ours && plain {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
 }
 
 /// The staged file name; installers recognise an AppImage, app bundle or `.exe` by its suffix.

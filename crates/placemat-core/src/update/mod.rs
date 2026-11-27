@@ -301,7 +301,7 @@ impl Staged {
 pub enum Relaunch {
     /// Start this AppImage or `.app` bundle after this process exits.
     Restart(PathBuf),
-    /// Start this installer now, then exit; it restarts the app itself.
+    /// Start this installer now, then exit; the app adds /R to relaunch.
     Installer {
         /// The installer executable.
         program: PathBuf,

@@ -27,6 +27,7 @@ image = { version = "=0.25.10", default-features = false, features = ["png", "gi
 
 [dev-dependencies]
 tempfile.workspace = true
+object = { version = "=0.40.0", default-features = false, features = ["read_core", "pe", "std"] }
 
 [package.metadata.packager]
 productName = "Placemat"
@@ -54,3 +55,7 @@ desktopTemplate = "packaging/placemat.desktop"
 [[test]]
 name = "integration"
 path = "tests/main.rs"
+
+[[test]]
+name = "windows_resources"
+path = "tests/windows_resources.rs"

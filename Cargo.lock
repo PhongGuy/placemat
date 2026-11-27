@@ -5397,6 +5397,7 @@ version = "0.1.0"
 dependencies = [
  "gpui-kit",
  "image",
+ "object",
  "placemat-core",
  "rust-embed",
  "tempfile",

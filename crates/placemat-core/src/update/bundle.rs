@@ -178,7 +178,7 @@ fn swap_dirs(new: &Path, target: &Path, aside: &Path) -> Result<(), InstallError
 }
 
 /// Best-effort removal of `path` without following a link at it.
-fn remove_tree(path: &Path) {
+pub(super) fn remove_tree(path: &Path) {
     match std::fs::symlink_metadata(path) {
         Ok(m) if m.is_dir() => {
             allow_owner_write(path, &m);

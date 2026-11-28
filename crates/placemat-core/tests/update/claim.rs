@@ -241,3 +241,145 @@ fn sweep_keeps_an_aged_lock_named_symlink() {
     assert!(link.symlink_metadata().is_ok(), "{:?}", names(dir.path()));
     assert_eq!(std::fs::read(&target).unwrap(), b"keep");
 }
+
+/// A macOS copy's work directory under `nonce`, with nested content, as `bundle` stages it.
+fn work_dir(dir: &Path, nonce: &str) -> std::path::PathBuf {
+    let work = dir.join(format!(".placemat-update-{nonce}-99.0.0"));
+    let inner = work.join("Placemat.app/Contents/MacOS");
+    std::fs::create_dir_all(&inner).unwrap();
+    std::fs::write(inner.join("placemat"), b"x").unwrap();
+    work
+}
+
+#[test]
+fn sweep_removes_a_gone_claims_work_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let claim = Claim::new(dir.path()).unwrap();
+    let work = work_dir(dir.path(), claim.nonce());
+    // A read-only directory inside must not stop the removal. Only Unix can seal one here, so
+    // elsewhere the plain removal is the whole test.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let sealed = work.join("Placemat.app/Contents");
+        std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o555)).unwrap();
+    }
+    #[cfg(not(unix))]
+    drop(work);
+    let lock = lock_name(&claim);
+    drop(claim);
+    sweep_staged(dir.path());
+    assert_eq!(names(dir.path()), [lock]);
+}
+
+#[test]
+fn sweep_removes_a_work_dir_with_no_lock_file() {
+    let dir = tempfile::tempdir().unwrap();
+    work_dir(dir.path(), "0123456789abcdef");
+    sweep_staged(dir.path());
+    assert!(names(dir.path()).is_empty(), "{:?}", names(dir.path()));
+}
+
+#[test]
+fn sweep_keeps_a_live_claims_work_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let claim = Claim::new(dir.path()).unwrap();
+    let work = work_dir(dir.path(), claim.nonce());
+    sweep_staged(dir.path());
+    assert!(work.join("Placemat.app/Contents/MacOS/placemat").exists());
+}
+
+#[test]
+fn sweep_keeps_an_aside_copy_of_a_gone_claim() {
+    let dir = tempfile::tempdir().unwrap();
+    let claim = Claim::new(dir.path()).unwrap();
+    let aside = dir
+        .path()
+        .join(format!(".placemat-old-{}-99.0.0.app", claim.nonce()));
+    std::fs::create_dir_all(aside.join("Contents")).unwrap();
+    std::fs::write(aside.join("Contents/Info.plist"), b"keep").unwrap();
+    drop(claim);
+    sweep_staged(dir.path());
+    assert_eq!(
+        std::fs::read(aside.join("Contents/Info.plist")).unwrap(),
+        b"keep"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn sweep_keeps_a_work_dir_named_symlink_and_its_target() {
+    let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(outside.path().join("kept"), b"keep").unwrap();
+    let link = dir.path().join(".placemat-update-0123456789abcdef-99.0.0");
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    sweep_staged(dir.path());
+    assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+    assert_eq!(std::fs::read(outside.path().join("kept")).unwrap(), b"keep");
+}
+
+#[test]
+fn sweep_keeps_dot_names_that_are_not_work_dirs() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in [
+        ".placemat-update-notanonce-1.0",
+        ".placemat-updates",
+        ".other",
+        ".placemat-update-0123456789abcdef.lock",
+    ] {
+        std::fs::create_dir(dir.path().join(name)).unwrap();
+    }
+    std::fs::write(
+        dir.path()
+            .join(".placemat-update-0123456789abcdef-99.0.0.zip"),
+        b"x",
+    )
+    .unwrap();
+    sweep_staged(dir.path());
+    assert_eq!(
+        names(dir.path()),
+        [
+            ".other",
+            ".placemat-update-0123456789abcdef-99.0.0.zip",
+            ".placemat-update-0123456789abcdef.lock",
+            ".placemat-update-notanonce-1.0",
+            ".placemat-updates",
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn sweep_keeps_a_work_dir_whose_lock_path_is_a_fifo() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = work_dir(dir.path(), "0123456789abcdef");
+    let lock = dir.path().join("placemat-update-0123456789abcdef.lock");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&lock)
+        .status()
+        .unwrap();
+    assert!(made.success(), "mkfifo failed");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let swept = dir.path().to_path_buf();
+    std::thread::spawn(move || {
+        sweep_staged(&swept);
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(10))
+        .unwrap_or_else(|_| panic!("sweep blocked on a FIFO lock path"));
+    assert!(work.exists(), "{:?}", names(dir.path()));
+}
+
+#[cfg(unix)]
+#[test]
+fn sweep_keeps_a_work_dir_whose_lock_path_is_a_symlink() {
+    let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let work = work_dir(dir.path(), "0123456789abcdef");
+    let target = outside.path().join("unlocked");
+    std::fs::write(&target, b"keep").unwrap();
+    let lock = dir.path().join("placemat-update-0123456789abcdef.lock");
+    std::os::unix::fs::symlink(&target, &lock).unwrap();
+    sweep_staged(dir.path());
+    assert!(work.exists(), "{:?}", names(dir.path()));
+    assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+}

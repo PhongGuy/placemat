@@ -7,10 +7,6 @@ use std::path::Path;
 /// Opens `path` for reading, following symlinks, only if it is a regular file both before and
 /// after the open. Returns the handle with its own metadata, `None` for anything else, and keeps
 /// the [`io::ErrorKind`] of any I/O error. Size checks are left to the caller.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the board reader adopts it next")
-)]
 pub(crate) fn open_regular(path: &Path) -> io::Result<Option<(File, Metadata)>> {
     if !std::fs::metadata(path)?.is_file() {
         return Ok(None);

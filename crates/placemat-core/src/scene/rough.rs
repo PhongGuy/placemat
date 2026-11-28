@@ -187,8 +187,9 @@ fn boxed(b: &Boxed, shape: Shape, style: &Style, measure: &dyn TextMeasure) -> S
     (origin, geometry, block)
 }
 
-/// An arrow from its resolved start: the shaft and one set per head, its outline the plain
-/// shaft, a dot when both ends meet, and a label centred on the shaft's midpoint.
+/// An arrow from its resolved start: the shaft, one set per arrow or bar head and two per
+/// triangle or dot head, its outline the plain shaft, a dot when both ends meet, and a label
+/// centred on the shaft's midpoint.
 fn arrow(a: &Arrow, board: &Board, style: &Style, measure: &dyn TextMeasure) -> Shaped {
     let start = resolve(&a.from, board, measure);
     let end = resolve(&a.to, board, measure);

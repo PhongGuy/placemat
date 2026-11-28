@@ -7,10 +7,13 @@ use std::path::{Path, PathBuf};
 use super::InstallError;
 
 /// Extracts the `.app` tarball at `archive` beside `bundle` and swaps it in under the bundle's
-/// own name. The archive must be a regular file in `bundle`'s directory. Any failure leaves
-/// `bundle` as it was; the work directory and the archive are always removed.
+/// own name. The archive must be a regular file in `bundle`'s directory. The work directory and
+/// aside copy are named with the owner's `nonce`, so concurrent copies never touch each other's
+/// work. Any failure leaves `bundle` as it was; the work directory and the archive are always
+/// removed.
 pub(crate) fn install_bundle(
     archive: &Path,
+    nonce: &str,
     version: &str,
     bundle: &Path,
 ) -> Result<(), InstallError> {
@@ -27,8 +30,8 @@ pub(crate) fn install_bundle(
             message: "the staged update is not a file beside the install target".into(),
         });
     };
-    let work = parent.join(format!(".placemat-update-{version}"));
-    let aside = parent.join(format!(".placemat-old-{version}.app"));
+    let work = parent.join(format!(".placemat-update-{nonce}-{version}"));
+    let aside = parent.join(format!(".placemat-old-{nonce}-{version}.app"));
     // The aside copy is spare only while a bundle is in place; if an earlier swap failed in
     // both directions it is the only original left, so it is never removed then.
     let in_place = || std::fs::symlink_metadata(bundle).is_ok_and(|m| m.is_dir());
@@ -36,6 +39,8 @@ pub(crate) fn install_bundle(
         if in_place() {
             remove_tree(&aside);
         }
+        // Copies racing here resolve last-wins: while another copy holds the bundle aside, the
+        // first rename fails with nothing moved, so the loser has nothing to roll back.
         swap_dirs(&new, bundle, &aside)
     });
     if in_place() {
@@ -217,6 +222,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const V: &str = "99.0.0";
+    const N: &str = "0123456789abcdef";
 
     #[derive(Clone, Copy)]
     enum E<'a> {
@@ -315,7 +321,7 @@ mod tests {
         let bundle = bundle_in(dir.path());
         let outside = dir.path().join("evil");
         for (name, body) in cases {
-            let got = install_bundle(&archive_in(dir.path(), &body), V, &bundle);
+            let got = install_bundle(&archive_in(dir.path(), &body), N, V, &bundle);
             assert!(
                 matches!(got, Err(InstallError::Io { .. })),
                 "{name}: {got:?}"
@@ -347,7 +353,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bundle = bundle_in(dir.path());
         let archive = archive_in(dir.path(), &good("Placemat.app"));
-        assert_eq!(install_bundle(&archive, V, &bundle), Ok(()));
+        assert_eq!(install_bundle(&archive, N, V, &bundle), Ok(()));
         assert_eq!(exe(&bundle), b"new exe");
         assert_eq!(mode(&bundle.join("Contents/MacOS/placemat")), 0o755);
         let link = std::fs::read_link(bundle.join("Contents/Versions/Current")).unwrap();
@@ -359,7 +365,7 @@ mod tests {
     fn bundle_keeps_the_installed_name() {
         let dir = tempfile::tempdir().unwrap();
         let bundle = bundle_in(dir.path());
-        install_bundle(&archive_in(dir.path(), &good("Other.app")), V, &bundle).unwrap();
+        install_bundle(&archive_in(dir.path(), &good("Other.app")), N, V, &bundle).unwrap();
         let plist = std::fs::read(bundle.join("Contents/Info.plist")).unwrap();
         assert_eq!(plist, b"new plist");
         assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
@@ -378,7 +384,7 @@ mod tests {
         let (dir, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let bundle = bundle_in(dir.path());
         let archive = archive_in(other.path(), &good("Placemat.app"));
-        let got = install_bundle(&archive, V, &bundle);
+        let got = install_bundle(&archive, N, V, &bundle);
         assert!(matches!(got, Err(InstallError::Io { .. })), "{got:?}");
         assert_eq!(exe(&bundle), b"old exe");
         assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
@@ -394,7 +400,7 @@ mod tests {
         std::fs::write(&target, good("Placemat.app")).unwrap();
         let link = dir.path().join(format!("placemat-update-{V}.app.tar.gz"));
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        let got = install_bundle(&link, V, &bundle);
+        let got = install_bundle(&link, N, V, &bundle);
         assert!(matches!(got, Err(InstallError::Io { .. })), "{got:?}");
         assert_eq!(exe(&bundle), b"old exe");
         assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
@@ -410,7 +416,7 @@ mod tests {
         if std::fs::write(dir.path().join("probe"), b"").is_ok() {
             return; // running as root, which ignores directory permissions
         }
-        let got = install_bundle(&archive, V, &bundle);
+        let got = install_bundle(&archive, N, V, &bundle);
         drop(guard);
         assert_eq!(
             got,
@@ -475,7 +481,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bundle = bundle_in(dir.path());
         let body = tarball(&[TOP, E::Hard("Placemat.app/x", "Other/x")]);
-        let got = install_bundle(&archive_in(dir.path(), &body), V, &bundle);
+        let got = install_bundle(&archive_in(dir.path(), &body), N, V, &bundle);
         assert!(
             matches!(&got, Err(InstallError::Io { message, .. })
                 if message == "the update has a link that leaves its bundle"),
@@ -536,7 +542,7 @@ mod tests {
                 E::DirMode("Placemat.app/lib/", 0o777),
                 E::File("Placemat.app/tool", b"t", file_mode),
             ]);
-            install_bundle(&archive_in(dir.path(), &body), V, &bundle).unwrap();
+            install_bundle(&archive_in(dir.path(), &body), N, V, &bundle).unwrap();
             assert_eq!(mode(&bundle.join("tool")), 0o755, "from {file_mode:o}");
             assert_eq!(mode(&bundle.join("lib")), 0o755, "directory");
         }
@@ -548,10 +554,15 @@ mod tests {
     fn bundle_keeps_the_aside_copy_when_no_bundle_is_in_place() {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("Placemat.app");
-        let aside = dir.path().join(format!(".placemat-old-{V}.app"));
+        let aside = dir.path().join(format!(".placemat-old-{N}-{V}.app"));
         std::fs::create_dir(&aside).unwrap();
         std::fs::write(aside.join("marker"), b"original").unwrap();
-        let got = install_bundle(&archive_in(dir.path(), &good("Placemat.app")), V, &bundle);
+        let got = install_bundle(
+            &archive_in(dir.path(), &good("Placemat.app")),
+            N,
+            V,
+            &bundle,
+        );
         assert!(matches!(got, Err(InstallError::Io { .. })), "{got:?}");
         assert_eq!(std::fs::read(aside.join("marker")).unwrap(), b"original");
         assert!(!bundle.exists());
@@ -574,16 +585,100 @@ mod tests {
         };
         let got = install_bundle(
             &archive_in(dir.path(), &ro(&[E::Dir("Second.app/")])),
+            N,
             V,
             &bundle,
         );
         assert!(matches!(got, Err(InstallError::Io { .. })), "{got:?}");
         assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
         for _ in 0..2 {
-            install_bundle(&archive_in(dir.path(), &ro(&[])), V, &bundle).unwrap();
+            install_bundle(&archive_in(dir.path(), &ro(&[])), N, V, &bundle).unwrap();
             assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
         }
         assert_eq!(mode(&bundle.join("ro")) & 0o777, 0o555);
+    }
+
+    // Another copy's work directory and aside copy, each holding a marker file.
+    fn other_copy(dir: &Path, nonce: &str) -> [PathBuf; 2] {
+        let work = dir.join(format!(".placemat-update-{nonce}-{V}"));
+        let aside = dir.join(format!(".placemat-old-{nonce}-{V}.app"));
+        for d in [&work, &aside] {
+            std::fs::create_dir(d).unwrap();
+            std::fs::write(d.join("marker"), nonce).unwrap();
+        }
+        [work, aside]
+    }
+
+    #[test]
+    fn bundle_leaves_another_nonces_work_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = bundle_in(dir.path());
+        let other = "fedcba9876543210";
+        let theirs = other_copy(dir.path(), other);
+        let archive = archive_in(dir.path(), &good("Placemat.app"));
+        assert_eq!(install_bundle(&archive, N, V, &bundle), Ok(()));
+        assert_eq!(exe(&bundle), b"new exe");
+        for d in &theirs {
+            assert_eq!(std::fs::read(d.join("marker")).unwrap(), other.as_bytes());
+        }
+        assert_eq!(
+            leftovers(dir.path()).len(),
+            3,
+            "{:?}",
+            leftovers(dir.path())
+        );
+    }
+
+    #[test]
+    fn bundle_installs_under_two_nonces_leave_only_the_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = bundle_in(dir.path());
+        for nonce in [N, "fedcba9876543210"] {
+            let archive = archive_in(dir.path(), &good("Placemat.app"));
+            assert_eq!(install_bundle(&archive, nonce, V, &bundle), Ok(()));
+            assert_eq!(leftovers(dir.path()), ["Placemat.app"], "{nonce}");
+        }
+        assert_eq!(exe(&bundle), b"new exe");
+    }
+
+    // Two copies swapping at once resolve last-wins: each either installs or loses its swap
+    // with an I/O error, and the folder ends with one complete bundle and nothing else.
+    #[test]
+    fn bundle_concurrent_installs_leave_one_complete_bundle() {
+        for round in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let bundle = bundle_in(dir.path());
+            let results: Vec<_> = std::thread::scope(|s| {
+                let handles: Vec<_> = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]
+                    .map(|nonce| {
+                        let archive = dir
+                            .path()
+                            .join(format!("placemat-update-{nonce}-{V}.app.tar.gz"));
+                        std::fs::write(&archive, good("Placemat.app")).unwrap();
+                        let bundle = &bundle;
+                        s.spawn(move || install_bundle(&archive, nonce, V, bundle))
+                    })
+                    .into_iter()
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            for got in &results {
+                assert!(
+                    matches!(got, Ok(()) | Err(InstallError::Io { .. })),
+                    "round {round}: {got:?}"
+                );
+            }
+            assert!(
+                results.iter().any(Result::is_ok),
+                "round {round}: {results:?}"
+            );
+            assert_eq!(exe(&bundle), b"new exe", "round {round}");
+            assert_eq!(
+                std::fs::read(bundle.join("Contents/Info.plist")).unwrap(),
+                b"new plist"
+            );
+            assert_eq!(leftovers(dir.path()), ["Placemat.app"], "round {round}");
+        }
     }
 
     #[test]

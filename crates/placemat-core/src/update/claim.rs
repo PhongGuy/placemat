@@ -98,10 +98,10 @@ fn lock_name(nonce: &str) -> String {
     format!("{PREFIX}{nonce}{LOCK_SUFFIX}")
 }
 
-/// Removes the regular files and links in `dir` whose names start with `placemat-update-`
-/// and that no live process owns, best effort, and likewise the real directories named
-/// `.placemat-update-<nonce>-...` (a macOS copy's work directories). A name carrying a nonce
-/// is kept while its lock is held, cannot be probed, or is not a regular file; an unlocked
+/// Removes the regular files and links in `dir` whose names start with `placemat-update-`,
+/// and the real directories named `.placemat-update-<nonce>-...` (a macOS copy's work
+/// directories), when no live process owns them, best effort. A nonce's entries are kept
+/// while its lock file is held, cannot be probed, or is not a regular file; an unlocked
 /// regular lock file goes once it is a minute old. Every other name is left alone.
 pub fn sweep_staged(dir: &Path) {
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {

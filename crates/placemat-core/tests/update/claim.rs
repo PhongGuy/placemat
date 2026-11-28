@@ -163,3 +163,81 @@ fn sweep_removes_only_staged_files_and_links() {
     );
     assert_eq!(std::fs::read(&kept).unwrap(), b"keep");
 }
+
+/// A data file under a nonce with no claim, for planting odd things at its lock path.
+fn orphan(dir: &Path) -> (String, std::path::PathBuf) {
+    let nonce = "0123456789abcdef";
+    write_all(dir, &data_names(nonce)[..1]);
+    (
+        data_names(nonce)[0].clone(),
+        dir.join(format!("placemat-update-{nonce}.lock")),
+    )
+}
+
+#[test]
+fn sweep_keeps_data_whose_lock_path_is_a_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let (data, lock) = orphan(dir.path());
+    std::fs::create_dir(&lock).unwrap();
+    sweep_staged(dir.path());
+    assert!(dir.path().join(data).exists(), "{:?}", names(dir.path()));
+}
+
+#[cfg(unix)]
+#[test]
+fn sweep_returns_and_keeps_data_whose_lock_path_is_a_fifo() {
+    let dir = tempfile::tempdir().unwrap();
+    let (data, lock) = orphan(dir.path());
+    let made = std::process::Command::new("mkfifo")
+        .arg(&lock)
+        .status()
+        .unwrap();
+    assert!(made.success(), "mkfifo failed");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let swept = dir.path().to_path_buf();
+    std::thread::spawn(move || {
+        sweep_staged(&swept);
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(10))
+        .unwrap_or_else(|_| panic!("sweep blocked on a FIFO lock path"));
+    assert!(dir.path().join(data).exists(), "{:?}", names(dir.path()));
+}
+
+#[cfg(unix)]
+#[test]
+fn sweep_keeps_data_whose_lock_path_is_a_symlink() {
+    let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (data, lock) = orphan(dir.path());
+    let target = outside.path().join("unlocked");
+    std::fs::write(&target, b"keep").unwrap();
+    std::os::unix::fs::symlink(&target, &lock).unwrap();
+    sweep_staged(dir.path());
+    assert!(dir.path().join(data).exists(), "{:?}", names(dir.path()));
+    assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+}
+
+#[cfg(unix)]
+#[test]
+fn sweep_keeps_an_aged_lock_named_symlink() {
+    let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let target = outside.path().join("unlocked");
+    std::fs::write(&target, b"keep").unwrap();
+    let link = dir.path().join("placemat-update-0123456789abcdef.lock");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    // The sweep ages a link by its own mtime, which std cannot set; touch -h can.
+    let touched = std::process::Command::new("touch")
+        .args(["-h", "-t", "202001010000"])
+        .arg(&link)
+        .status()
+        .unwrap();
+    assert!(touched.success(), "touch -h failed");
+    let link_age = std::fs::symlink_metadata(&link)
+        .unwrap()
+        .modified()
+        .unwrap();
+    assert!(SystemTime::now().duration_since(link_age).unwrap() > Duration::from_secs(3600));
+    sweep_staged(dir.path());
+    assert!(link.symlink_metadata().is_ok(), "{:?}", names(dir.path()));
+    assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+}

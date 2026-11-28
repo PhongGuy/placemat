@@ -100,8 +100,8 @@ fn lock_name(nonce: &str) -> String {
 
 /// Removes the regular files and links in `dir` whose names start with `placemat-update-`
 /// and that no live process owns, best effort. A name carrying a nonce is kept while its
-/// lock is held or cannot be probed; an unlocked lock file goes once it is a minute old.
-/// Directories and every other name are left alone.
+/// lock is held, cannot be probed, or is not a regular file; an unlocked regular lock file
+/// goes once it is a minute old. Directories and every other name are left alone.
 pub fn sweep_staged(dir: &Path) {
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let file_name = entry.file_name();
@@ -125,18 +125,40 @@ pub fn sweep_staged(dir: &Path) {
             Owner::Lock => continue,
         };
         // The probe's lock is held across the remove, so the owner's files go only while
-        // no process holds them; any probe error other than a missing lock file keeps them.
-        match File::open(&lock) {
-            Err(e) if e.kind() == ErrorKind::NotFound => {
+        // no process holds them.
+        match probe(&lock) {
+            Probe::Missing => {
                 let _ = std::fs::remove_file(entry.path());
             }
-            Err(_) => {}
-            Ok(probe) => {
-                if probe.try_lock().is_ok() {
-                    let _ = std::fs::remove_file(entry.path());
-                }
+            Probe::Unlocked(_held) => {
+                let _ = std::fs::remove_file(entry.path());
             }
+            Probe::Held => {}
         }
+    }
+}
+
+/// What probing a lock path found.
+enum Probe {
+    /// Nothing at the path: no owner is left.
+    Missing,
+    /// A regular file whose lock this handle now holds.
+    Unlocked(File),
+    /// Locked, not a regular file, or unprobeable: treat as owned.
+    Held,
+}
+
+// lstat first, so a link, FIFO or directory at a lock path is never opened or followed.
+fn probe(lock: &Path) -> Probe {
+    match std::fs::symlink_metadata(lock) {
+        Err(e) if e.kind() == ErrorKind::NotFound => return Probe::Missing,
+        Ok(meta) if meta.is_file() => {}
+        _ => return Probe::Held,
+    }
+    match crate::fsx::open_regular(lock) {
+        Err(e) if e.kind() == ErrorKind::NotFound => Probe::Missing,
+        Ok(Some((file, _))) if file.try_lock().is_ok() => Probe::Unlocked(file),
+        _ => Probe::Held,
     }
 }
 

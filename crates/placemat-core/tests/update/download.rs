@@ -161,11 +161,33 @@ fn download_removes_part_on_failure() {
     }
 }
 
+#[test]
+fn download_refuses_before_request_when_the_part_cannot_be_created() {
+    let (s, dir, claim) = setup();
+    // A non-empty directory at the `.part` name, which no file create or remove gets past.
+    let planted = dir.path().join(format!("{}.part", staged(&claim)));
+    std::fs::create_dir(&planted).unwrap();
+    std::fs::write(planted.join("inside"), b"x").unwrap();
+    s.route("/artifact", Reply::Body(BODY.to_vec()));
+    assert_eq!(
+        download(&offer(&s, "appimage", BODY), &claim, |_, _| {}).unwrap_err(),
+        DownloadError::NotWritable(dir.path().to_path_buf())
+    );
+    assert!(
+        s.seen().iter().all(|r| r.path != "/artifact"),
+        "the artifact was requested"
+    );
+    assert!(
+        planted.join("inside").is_file(),
+        "the planted directory went"
+    );
+}
+
 // The claim's directory vanishes before the download, so the `.part` cannot be created.
 // Unix only: Windows cannot remove a directory while the claim's lock handle is open.
 #[cfg(unix)]
 #[test]
-fn download_refuses_unwritable_dir_before_request() {
+fn download_refuses_before_request_when_the_dir_vanished() {
     let s = Server::start();
     let dir = tempfile::tempdir().unwrap();
     let gone = dir.path().join("gone");

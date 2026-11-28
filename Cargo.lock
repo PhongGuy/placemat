@@ -5414,6 +5414,7 @@ dependencies = [
  "flate2",
  "hex",
  "kdl",
+ "libc",
  "minisign",
  "minisign-verify",
  "roughr",

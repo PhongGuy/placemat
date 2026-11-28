@@ -75,6 +75,17 @@ fn long_comments_strings_and_chains_return() {
 }
 
 #[test]
+fn ten_thousand_nested_slashdashed_blocks_return() {
+    on_small_stack(|| {
+        let d = ReadLimits::default();
+        let open = "/-a {".repeat(10_000);
+        assert!(parse(&open, &d).is_err(), "unclosed chain");
+        let closed = format!("{open}{}\nm", "}".repeat(10_000));
+        assert_eq!(parse(&closed, &d).unwrap().len(), 1);
+    });
+}
+
+#[test]
 fn closing_braces_inside_raw_and_multi_line_strings_stay_text() {
     on_small_stack(|| {
         let nodes = parse(

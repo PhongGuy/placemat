@@ -1,5 +1,5 @@
 //! Forms where kdl 6.7.1 and kdlite disagreed, each settled by KDL 2.0.0's grammar.
-use placemat_core::kdl::{ReadLimits, parse};
+use placemat_core::kdl::{ReadLimits, Value, parse};
 
 fn names(text: &str) -> Vec<String> {
     let nodes =
@@ -100,4 +100,49 @@ fn a_line_continuation_may_end_on_crlf() {
         assert_eq!(nodes.len(), 1, "{text:?}");
         assert_eq!(nodes[0].entries.len(), 1, "{text:?}");
     }
+}
+
+#[test]
+fn skipped_nodes_keep_the_one_real_block_rule() {
+    refused("/-n { x {a} {b} }");
+    refused("n /-{ x {a} {b} }");
+    refused("/-a { b { x {a} {b} } }");
+    refused("n /-{ x /-{y} {z} {w} }");
+    refused("n /-{a} {b} {c}");
+    refused("n {a} /-{b} {c}");
+}
+
+#[test]
+fn slashdashed_text_must_still_be_valid() {
+    for text in [
+        "n /-\"unterminated",
+        "n /-k=",
+        "/-n \"x",
+        "p { /-n 0X1 }",
+        "n /-{ x \"y }",
+    ] {
+        refused(text);
+    }
+}
+
+#[test]
+fn slashdashed_entries_drop_only_themselves() {
+    let nodes = parse("n /-1 a", &ReadLimits::default()).unwrap();
+    assert_eq!(nodes[0].entries.len(), 1);
+    assert_eq!(nodes[0].entries[0].value, Value::String("a".into()));
+    let nodes = parse("n /-k=1 k=2", &ReadLimits::default()).unwrap();
+    assert_eq!(nodes[0].entries.len(), 1);
+    assert_eq!(nodes[0].entries[0].key.as_deref(), Some("k"));
+    assert_eq!(nodes[0].entries[0].value, Value::Number("2".into()));
+}
+
+#[test]
+fn slashdashed_nodes_and_blocks_before_a_real_one_are_valid() {
+    assert_eq!(names("/-n\nm"), ["m"]);
+    assert_eq!(names("p { /-n; m }"), ["p"]);
+    assert_eq!(names("n /-{ x } {y}"), ["n"]);
+    assert!(names("/-n { x /-{ y } {z} }").is_empty(), "nothing left");
+    assert!(names("/-n { x {a} /-{b} }").is_empty(), "nothing left");
+    assert_eq!(names("n {a} /-{b}"), ["n"]);
+    assert_eq!(names("n {a} /-{b} /-{c}"), ["n"]);
 }

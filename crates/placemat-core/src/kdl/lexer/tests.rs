@@ -214,3 +214,58 @@ fn consecutive_slashdashed_nodes_each_own_their_block() {
     nested.extend([Event::Begin { offset: 2 }, Event::End { offset: 21 }]);
     assert_eq!(events("p { /-n {a}; /-m {b} }").unwrap(), nested);
 }
+
+// Blanking the first `/-` keeps every byte offset, so the plain text must fail at the same place.
+fn refused_like_plain(text: &str, at: usize) {
+    assert_eq!(
+        events(text).unwrap_err(),
+        Error::MultipleChildren(at),
+        "{text:?}"
+    );
+    let plain = text.replacen("/-", "  ", 1);
+    assert_eq!(
+        events(&plain).unwrap_err(),
+        Error::MultipleChildren(at),
+        "{plain:?}"
+    );
+}
+
+#[test]
+fn nodes_inside_skipped_text_still_own_at_most_one_real_block() {
+    refused_like_plain("/-n { x {a} {b} }", 12);
+    refused_like_plain("n /-{ x {a} {b} }", 12);
+    refused_like_plain("/-a { b { x {a} {b} } }", 16);
+    refused_like_plain("n /-{ x /-{y} {z} {w} }", 18);
+}
+
+#[test]
+fn a_slashdashed_block_does_not_take_the_owners_real_block() {
+    assert_eq!(
+        events("n /-{a} {b} {c}").unwrap_err(),
+        Error::MultipleChildren(12)
+    );
+    assert_eq!(
+        events("n {a} /-{b} {c}").unwrap_err(),
+        Error::MultipleChildren(12)
+    );
+}
+
+#[test]
+fn slashdashed_blocks_may_follow_the_real_one() {
+    let mut want = vec![Event::Node {
+        ty: None,
+        name: Cow::Borrowed("n"),
+        start: 0,
+    }];
+    want.extend([
+        Event::Begin { offset: 2 },
+        Event::Node {
+            ty: None,
+            name: Cow::Borrowed("a"),
+            start: 3,
+        },
+        Event::End { offset: 4 },
+    ]);
+    assert_eq!(events("n {a} /-{b}").unwrap(), want);
+    assert_eq!(events("n {a} /-{b} /-{c}").unwrap(), want);
+}

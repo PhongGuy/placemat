@@ -205,3 +205,18 @@ fn only_the_latest_ticket_is_current() {
     assert!(!tickets.is_latest(first));
     assert!(tickets.is_latest(second));
 }
+
+#[test]
+fn a_dialog_failure_supersedes_an_open_still_in_flight() {
+    let mut tickets = Tickets::default();
+    let earlier = tickets.issue();
+    let text = tickets.dialog_failed(&"no portal");
+    assert_eq!(
+        text, "Could not show the file dialog: no portal",
+        "banner text"
+    );
+    assert!(
+        !tickets.is_latest(earlier),
+        "a stale open's success must not clear the dialog error"
+    );
+}

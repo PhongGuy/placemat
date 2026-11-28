@@ -19,7 +19,7 @@ use crate::updates::{self, Notice, Updater, notice_text};
 use crate::viewer::OpenBoard;
 use crate::viewer::editor::BoardEditor;
 use crate::viewer::measure::GpuiMeasure;
-use crate::viewer::notice::{Tickets, clean, error_text, readonly_text, warnings_text};
+use crate::viewer::notice::{Tickets, error_text, readonly_text, warnings_text};
 use crate::viewer::open::open_board;
 
 /// The window's only view, which also keeps the theme on the OS appearance.
@@ -109,7 +109,8 @@ impl MainView {
     }
 
     /// Asks for one board file through the system dialog and opens it. A cancel or a dropped
-    /// reply does nothing; a dialog the platform cannot show is reported in the error banner.
+    /// reply does nothing; a dialog the platform cannot show is reported in the error banner,
+    /// and an open still in flight from before it no longer lands.
     fn prompt_open(&mut self, cx: &mut Context<Self>) {
         let reply = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -121,9 +122,8 @@ impl MainView {
             let path = match reply.await {
                 Ok(Ok(Some(paths))) => paths.into_iter().next(),
                 Ok(Err(e)) => {
-                    let text = clean(&format!("Could not show the file dialog: {e}"));
                     let _ = this.update(cx, |view, cx| {
-                        view.error = Some(text.into());
+                        view.error = Some(view.tickets.dialog_failed(&e).into());
                         cx.notify();
                     });
                     return;

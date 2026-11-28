@@ -147,4 +147,11 @@ impl Tickets {
     pub fn is_latest(&self, t: Ticket) -> bool {
         t.0 == self.latest
     }
+
+    /// The error banner text for a file dialog the platform could not show. The failure is
+    /// the latest open event, so every open started before it no longer lands.
+    pub fn dialog_failed(&mut self, e: &dyn std::fmt::Display) -> String {
+        self.issue();
+        clean(&format!("Could not show the file dialog: {e}"))
+    }
 }

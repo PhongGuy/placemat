@@ -19,6 +19,9 @@ impl Camera {
     pub const MIN_ZOOM: f64 = 0.1;
     /// The farthest a camera zooms in.
     pub const MAX_ZOOM: f64 = 30.0;
+    /// The clear border [`Camera::fit`] leaves around the content, in logical pixels (the
+    /// window's own units, never scaled by the display's scale factor).
+    pub const FIT_MARGIN: f64 = 32.0;
 
     /// A camera at `origin` with `zoom` clamped to the allowed range; a non-finite zoom is 1.
     pub fn new(origin: (f64, f64), zoom: f64) -> Self {
@@ -73,24 +76,37 @@ impl Camera {
         Rect::new(self.origin.0, self.origin.1, far.0, far.1)
     }
 
-    /// The camera that shows all of `content` centred in `viewport`. The zoom is the smallest
-    /// viewport-to-content ratio over the content's non-zero sides (1 for a point), clamped.
+    /// The camera that shows all of `content` centred in `viewport` with [`Camera::FIT_MARGIN`]
+    /// logical pixels clear on each side, shrunk to a quarter of the shorter viewport side when
+    /// the viewport is small. Zoom is the smallest inner-to-content ratio over non-zero sides (1
+    /// for a point), clamped. A viewport side that is not finite and positive gives zoom 1
+    /// centred on the content.
     pub fn fit(content: Rect, viewport: (f64, f64)) -> Camera {
-        let ratios = [
-            (viewport.0, content.width()),
-            (viewport.1, content.height()),
-        ];
-        let zoom = ratios
-            .iter()
-            .filter(|(_, side)| *side > 0.0)
-            .map(|(view, side)| view / side)
-            .reduce(f64::min)
-            .unwrap_or(1.0);
-        let zoom = clamp_zoom(zoom);
         let centre = (
             (content.x0 + content.x1) / 2.0,
             (content.y0 + content.y1) / 2.0,
         );
+        let usable = |side: f64| side.is_finite() && side > 0.0;
+        if !(usable(viewport.0) && usable(viewport.1)) {
+            return Camera {
+                origin: centre,
+                zoom: 1.0,
+            };
+        }
+        // The margin is in screen pixels, so it narrows the viewport before the ratio is taken;
+        // centring against the full viewport then also holds when the zoom is clamped.
+        let margin = Self::FIT_MARGIN.min(viewport.0.min(viewport.1) / 4.0);
+        let ratios = [
+            (viewport.0 - 2.0 * margin, content.width()),
+            (viewport.1 - 2.0 * margin, content.height()),
+        ];
+        let zoom = ratios
+            .iter()
+            .filter(|(_, side)| *side > 0.0)
+            .map(|(inner, side)| inner / side)
+            .reduce(f64::min)
+            .unwrap_or(1.0);
+        let zoom = clamp_zoom(zoom);
         Camera {
             origin: (
                 centre.0 - viewport.0 / (2.0 * zoom),

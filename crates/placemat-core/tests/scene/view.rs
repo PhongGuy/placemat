@@ -53,18 +53,70 @@ fn zoom_about_keeps_the_point_under_the_cursor_and_clamps() {
 fn fit_centres_the_content_at_the_smaller_ratio() {
     let c = Camera::fit(Rect::new(0.0, 0.0, 1000.0, 500.0), (800.0, 600.0));
     assert!(
-        (c.zoom - 0.8).abs() < 1e-12 && close(c.origin, (0.0, -125.0)),
+        (c.zoom - 0.736).abs() < 1e-12
+            && close(c.origin, (500.0 - 400.0 / 0.736, 250.0 - 300.0 / 0.736)),
         "{c:?}"
     );
     let flat = Camera::fit(Rect::new(0.0, 0.0, 1000.0, 0.0), (800.0, 600.0));
     assert!(
-        (flat.zoom - 0.8).abs() < 1e-12 && close(flat.origin, (0.0, -375.0)),
+        (flat.zoom - 0.736).abs() < 1e-12
+            && close(flat.origin, (500.0 - 400.0 / 0.736, -300.0 / 0.736)),
         "{flat:?}"
     );
     let point = Camera::fit(Rect::new(5.0, 5.0, 5.0, 5.0), (800.0, 600.0));
     assert_eq!((point.zoom, point.origin), (1.0, (-395.0, -295.0)));
     let huge = Camera::fit(Rect::new(0.0, 0.0, 33_554_432.0, 10.0), (800.0, 600.0));
     assert_eq!(huge.zoom, Camera::MIN_ZOOM);
+}
+
+#[test]
+fn fit_leaves_the_margin_on_the_limiting_axis() {
+    assert_eq!(Camera::FIT_MARGIN, 32.0);
+    let wide = Camera::fit(Rect::new(0.0, 0.0, 1000.0, 500.0), (800.0, 600.0));
+    assert!((wide.zoom - 0.736).abs() < 1e-9, "{wide:?}");
+    let (left, top) = wide.to_screen((0.0, 0.0));
+    let (right, _) = wide.to_screen((1000.0, 500.0));
+    assert!((left - 32.0).abs() < 1e-9, "{left}");
+    assert!((right - 768.0).abs() < 1e-9, "{right}");
+    assert!((top - 116.0).abs() < 1e-9, "{top}");
+
+    let tall = Camera::fit(Rect::new(0.0, 0.0, 100.0, 1000.0), (800.0, 600.0));
+    assert!((tall.zoom - 0.536).abs() < 1e-9, "{tall:?}");
+    assert!(
+        (tall.to_screen((0.0, 0.0)).1 - 32.0).abs() < 1e-9,
+        "{tall:?}"
+    );
+    assert!(
+        (tall.to_screen((0.0, 1000.0)).1 - 568.0).abs() < 1e-9,
+        "{tall:?}"
+    );
+}
+
+#[test]
+fn fit_shrinks_the_margin_to_a_quarter_of_a_small_viewport() {
+    let c = Camera::fit(Rect::new(0.0, 0.0, 100.0, 100.0), (40.0, 40.0));
+    assert!((c.zoom - 0.2).abs() < 1e-9, "{c:?}");
+    assert!((c.to_screen((0.0, 0.0)).0 - 10.0).abs() < 1e-9, "{c:?}");
+}
+
+#[test]
+fn fit_in_a_degenerate_viewport_centres_the_content_at_zoom_1() {
+    for viewport in [
+        (0.0, 600.0),
+        (-5.0, 600.0),
+        (f64::NAN, 600.0),
+        (800.0, f64::INFINITY),
+    ] {
+        let c = Camera::fit(Rect::new(0.0, 0.0, 1000.0, 500.0), viewport);
+        assert_eq!((c.zoom, c.origin), (1.0, (500.0, 250.0)), "{viewport:?}");
+    }
+}
+
+#[test]
+fn fit_of_tiny_content_clamps_to_max_zoom_and_centres() {
+    let c = Camera::fit(Rect::new(0.0, 0.0, 1.0, 1.0), (800.0, 600.0));
+    assert_eq!(c.zoom, Camera::MAX_ZOOM);
+    assert!(close(c.to_screen((0.5, 0.5)), (400.0, 300.0)), "{c:?}");
 }
 
 #[test]

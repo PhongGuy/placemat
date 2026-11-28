@@ -8,9 +8,9 @@ use super::InstallError;
 
 /// Extracts the `.app` tarball at `archive` beside `bundle` and swaps it in under the bundle's
 /// own name. The archive must be a regular file in `bundle`'s directory. The work directory and
-/// aside copy are named with the owner's `nonce`, so concurrent copies never touch each other's
-/// work. Any failure leaves `bundle` as it was; the work directory and the archive are always
-/// removed.
+/// aside copy carry the owner's `nonce`, so concurrent copies never share them; a later copy's
+/// swap still replaces the bundle an earlier one installed (last wins). Any failure leaves
+/// `bundle` as it was; the work directory and the archive are always removed.
 pub(crate) fn install_bundle(
     archive: &Path,
     nonce: &str,
@@ -30,25 +30,40 @@ pub(crate) fn install_bundle(
             message: "the staged update is not a file beside the install target".into(),
         });
     };
-    let work = parent.join(format!(".placemat-update-{nonce}-{version}"));
-    let aside = parent.join(format!(".placemat-old-{nonce}-{version}.app"));
-    // The aside copy is spare only while a bundle is in place; if an earlier swap failed in
-    // both directions it is the only original left, so it is never removed then.
-    let in_place = || std::fs::symlink_metadata(bundle).is_ok_and(|m| m.is_dir());
+    let Staging { work, aside } = staging_paths(parent, nonce, version);
     let result = extract_bundle(archive, &work, bundle).and_then(|new| {
-        if in_place() {
-            remove_tree(&aside);
-        }
+        settle_aside(false, bundle, &aside);
         // Copies racing here resolve last-wins: while another copy holds the bundle aside, the
         // first rename fails with nothing moved, so the loser has nothing to roll back.
         swap_dirs(&new, bundle, &aside)
     });
-    if in_place() {
-        remove_tree(&aside);
-    }
+    settle_aside(result.is_ok(), bundle, &aside);
     remove_tree(&work);
     let _ = std::fs::remove_file(archive);
     result
+}
+
+/// Where one install unpacks its update and parks the bundle it replaces.
+struct Staging {
+    work: PathBuf,
+    aside: PathBuf,
+}
+
+/// The work directory and aside path in `parent` for the copy owning `nonce`.
+fn staging_paths(parent: &Path, nonce: &str, version: &str) -> Staging {
+    Staging {
+        work: parent.join(format!(".placemat-update-{nonce}-{version}")),
+        aside: parent.join(format!(".placemat-old-{nonce}-{version}.app")),
+    }
+}
+
+/// Removes the aside copy when it is spare. After this copy's swap it is always a superseded
+/// bundle. Otherwise it is spare only while a bundle is in place: if an earlier swap failed in
+/// both directions it is the only original left, so it is kept then.
+fn settle_aside(swapped: bool, bundle: &Path, aside: &Path) {
+    if swapped || std::fs::symlink_metadata(bundle).is_ok_and(|m| m.is_dir()) {
+        remove_tree(aside);
+    }
 }
 
 /// Unpacks the gzip tarball at `archive` into a fresh `work` directory and returns the bundle
@@ -214,7 +229,7 @@ pub(crate) fn failed(path: &Path, target: &Path, e: std::io::Error) -> InstallEr
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
-    use super::{install_bundle, swap_dirs};
+    use super::{install_bundle, settle_aside, staging_paths, swap_dirs};
     use crate::update::InstallError;
     use std::fs::Permissions;
     use std::io::Write as _;
@@ -554,7 +569,7 @@ mod tests {
     fn bundle_keeps_the_aside_copy_when_no_bundle_is_in_place() {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("Placemat.app");
-        let aside = dir.path().join(format!(".placemat-old-{N}-{V}.app"));
+        let aside = staging_paths(dir.path(), N, V).aside;
         std::fs::create_dir(&aside).unwrap();
         std::fs::write(aside.join("marker"), b"original").unwrap();
         let got = install_bundle(
@@ -600,13 +615,42 @@ mod tests {
 
     // Another copy's work directory and aside copy, each holding a marker file.
     fn other_copy(dir: &Path, nonce: &str) -> [PathBuf; 2] {
-        let work = dir.join(format!(".placemat-update-{nonce}-{V}"));
-        let aside = dir.join(format!(".placemat-old-{nonce}-{V}.app"));
-        for d in [&work, &aside] {
+        let theirs = staging_paths(dir, nonce, V);
+        for d in [&theirs.work, &theirs.aside] {
             std::fs::create_dir(d).unwrap();
             std::fs::write(d.join("marker"), nonce).unwrap();
         }
-        [work, aside]
+        [theirs.work, theirs.aside]
+    }
+
+    #[test]
+    fn bundle_staging_paths_differ_by_nonce() {
+        let dir = Path::new("/apps");
+        let (a, b) = (
+            staging_paths(dir, N, V),
+            staging_paths(dir, "fedcba9876543210", V),
+        );
+        let all = [&a.work, &a.aside, &b.work, &b.aside];
+        for (i, p) in all.iter().enumerate() {
+            assert_eq!(p.parent(), Some(dir), "{p:?}");
+            for q in &all[i + 1..] {
+                assert_ne!(p, q);
+            }
+        }
+        let name = |p: &Path| p.file_name().unwrap().to_str().unwrap().to_owned();
+        assert_eq!(name(&a.work), format!(".placemat-update-{N}-{V}"));
+        assert_eq!(name(&a.aside), format!(".placemat-old-{N}-{V}.app"));
+    }
+
+    // Another copy can move the bundle aside right after this one's swap succeeds; the swapped
+    // out original is then still superseded and must go, though nothing is in place.
+    #[test]
+    fn bundle_successful_swap_removes_its_aside_with_nothing_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let (bundle, aside) = (dir.path().join("Placemat.app"), dir.path().join("old.app"));
+        std::fs::create_dir(&aside).unwrap();
+        settle_aside(true, &bundle, &aside);
+        assert!(!aside.exists());
     }
 
     #[test]

@@ -132,8 +132,9 @@ fn check_entry<R: std::io::Read>(
         return Err("the update has an empty path");
     };
     // Cleanup never changes a mode through a path, so a directory its owner cannot read and
-    // search would be left behind; refuse it here instead.
-    if kind.is_dir() {
+    // search would be left behind; refuse it here instead. Tar also unpacks a regular entry
+    // whose raw path ends in `/` as a directory, as old archivers wrote them.
+    if kind.is_dir() || (kind.is_file() && entry.path_bytes().ends_with(b"/")) {
         let mode = entry
             .header()
             .mode()
@@ -207,7 +208,8 @@ fn allow_owner_write(dir: &Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
-        // O_NONBLOCK keeps a FIFO swapped in at the path from blocking the open.
+        // O_DIRECTORY already fails a FIFO with ENOTDIR before the open could block;
+        // O_NONBLOCK is the fallback should that ever not hold.
         let Ok(handle) = std::fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -641,10 +643,16 @@ mod tests {
     #[test]
     fn bundle_refuses_directory_its_owner_cannot_open() {
         for dir_mode in [0o000, 0o300] {
-            assert_refused(vec![(
-                "unopenable directory",
-                tarball(&[TOP, E::DirMode("Placemat.app/x/", dir_mode)]),
-            )]);
+            assert_refused(vec![
+                (
+                    "unopenable directory",
+                    tarball(&[TOP, E::DirMode("Placemat.app/x/", dir_mode)]),
+                ),
+                (
+                    "regular entry unpacked as a directory",
+                    tarball(&[TOP, E::File("Placemat.app/x/", b"", dir_mode)]),
+                ),
+            ]);
         }
     }
 
@@ -674,6 +682,21 @@ mod tests {
         let target = outside.path().join("file");
         std::fs::write(&target, b"x").unwrap();
         swapped_for_link(&target, 0o600);
+    }
+
+    #[test]
+    fn owner_write_leaves_a_hard_linked_file_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let (outside, work) = (dir.path().join("outside"), dir.path().join("work"));
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::create_dir(&work).unwrap();
+        let target = outside.join("file");
+        std::fs::write(&target, b"x").unwrap();
+        std::fs::set_permissions(&target, Permissions::from_mode(0o600)).unwrap();
+        let link = work.join("link");
+        std::fs::hard_link(&target, &link).unwrap();
+        allow_owner_write(&link);
+        assert_eq!(mode(&target), 0o600);
     }
 
     #[test]

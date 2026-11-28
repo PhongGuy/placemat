@@ -87,7 +87,8 @@ pub fn warnings_text(warnings: &[Warning]) -> Option<String> {
         .take(WARNING_LINES)
         .map(|w| clean(&warning_line(w)))
         .collect();
-    if let Some(rest) = warnings.len().checked_sub(WARNING_LINES).filter(|n| *n > 0) {
+    if warnings.len() > WARNING_LINES {
+        let rest = warnings.len() - WARNING_LINES;
         lines.push(format!("and {rest} more"));
     }
     Some(lines.join("\n"))

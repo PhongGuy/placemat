@@ -139,6 +139,46 @@ async fn the_canvas_lists_one_leaf_per_visible_shape() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn fit_insets_the_board_from_the_canvas_by_the_margin() {
+    let pilot = Pilot::start().await;
+    let path = fixture("canonical/rect.board");
+    pilot.ok("launch", launch_with("headless", &[&path])).await;
+    let tree = pilot
+        .ok("tree", json!({"wait_for": {"id": ["board"]}}))
+        .await;
+    assert_eq!(tree["settled"], json!(true), "{tree}");
+    let board = rect(node(&tree, "board"));
+    // The union of the leaves is the fitted content; this wide board is limited by x.
+    let all = boxes(&tree);
+    assert!(!all.is_empty(), "{tree}");
+    let left = all.iter().map(|(_, b)| b.0).fold(f64::INFINITY, f64::min);
+    let top = all.iter().map(|(_, b)| b.1).fold(f64::INFINITY, f64::min);
+    let right = all
+        .iter()
+        .map(|(_, b)| b.0 + b.2)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bottom = all
+        .iter()
+        .map(|(_, b)| b.1 + b.3)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let margin = placemat_core::scene::Camera::FIT_MARGIN;
+    let insets = [
+        left - board.0,
+        board.0 + board.2 - right,
+        top - board.1,
+        board.1 + board.3 - bottom,
+    ];
+    assert!(
+        (insets[0] - margin).abs() <= 0.5 && (insets[1] - margin).abs() <= 0.5,
+        "x insets {insets:?} in {board:?}"
+    );
+    assert!(
+        insets[2] >= margin - 0.5 && insets[3] >= margin - 0.5,
+        "y insets {insets:?} in {board:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_drag_pans_the_canvas_and_the_fit_key_brings_it_back() {
     let pilot = Pilot::start().await;
     pilot

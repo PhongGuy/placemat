@@ -125,8 +125,8 @@ jobs:
   windows:
     if: inputs.windows
     runs-on: windows-latest
-    # ASSUMED until the first run is measured.
-    timeout-minutes: 60
+    # Cold runs took 5 to 8 minutes in November 2026; 20 bounds a hung run.
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash

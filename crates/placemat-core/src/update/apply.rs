@@ -32,7 +32,7 @@ pub fn install(kind: &InstallKind, staged: Staged) -> Result<Relaunch, InstallEr
             Ok(Relaunch::Restart(target.clone()))
         }
         InstallKind::MacApp(bundle) => {
-            install_bundle(staged.path(), staged.version(), bundle)?;
+            install_bundle(staged.path(), staged.nonce(), staged.version(), bundle)?;
             Ok(Relaunch::Restart(bundle.clone()))
         }
         InstallKind::WindowsNsis => hand_off_installer(&staged),

@@ -268,6 +268,7 @@ pub struct Staged {
     format: Format,
     sha256: String,
     size: u64,
+    nonce: String,
 }
 
 impl Staged {
@@ -294,6 +295,11 @@ impl Staged {
     /// Its size in bytes.
     pub fn size(&self) -> u64 {
         self.size
+    }
+
+    /// The nonce of the claim it was staged under, which names the install's work.
+    pub(crate) fn nonce(&self) -> &str {
+        &self.nonce
     }
 }
 

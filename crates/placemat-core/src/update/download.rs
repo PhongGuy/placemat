@@ -51,6 +51,7 @@ pub fn download(
         format: a.format,
         sha256: a.sha256.clone(),
         size: a.size,
+        nonce: claim.nonce().to_owned(),
     })
 }
 
@@ -186,5 +187,45 @@ mod tests {
             [format!("placemat-update-{}.lock", claim.nonce())],
             "a file was left"
         );
+    }
+
+    // The staged file carries its claim's nonce, so the install can name its work after it.
+    #[test]
+    fn download_records_the_claim_nonce() {
+        use sha2::{Digest as _, Sha256};
+        use std::io::{Read as _, Write as _};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let body = b"new build!";
+        let url = format!("http://{}/artifact", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = conn.read(&mut buf).unwrap();
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            conn.write_all(head.as_bytes()).unwrap();
+            conn.write_all(body).unwrap();
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let a = Available {
+            version: "99.0.0".into(),
+            pub_date: None,
+            format: Format::App,
+            url,
+            sha256: hex::encode(Sha256::digest(body)),
+            size: body.len() as u64,
+            timeouts: Timeouts {
+                connect: Duration::from_secs(5),
+                manifest: Duration::from_secs(5),
+                artifact: Duration::from_secs(5),
+            },
+            allow_loopback_http: true,
+        };
+        let claim = crate::update::Claim::new(dir.path()).unwrap();
+        let staged = download(&a, &claim, |_, _| {}).unwrap();
+        server.join().unwrap();
+        assert_eq!(staged.nonce(), claim.nonce());
     }
 }

@@ -1,8 +1,8 @@
 # The gate on every push to master and every pull request. The Linux job runs what `make check`
 # runs locally, with a locked Cargo.lock, plus the workflow lint, the script tests, the icons
 # and the notices. macOS runs clippy only, and the pilot job drives the app through the headless
-# gpui-pilot scenarios on software Vulkan. A manual run with `windows` ticked also runs clippy and
-# the core updater tests on windows-latest.
+# gpui-pilot scenarios on software Vulkan. A manual run with `windows` ticked also runs clippy,
+# the core updater tests and the exe's icon and version resource check on windows-latest.
 name: CI
 
 on:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       windows:
-        description: Also run clippy and the updater tests on windows-latest
+        description: Also run clippy, the updater tests and the exe resource check on windows-latest
         type: boolean
         default: false
 
@@ -146,6 +146,9 @@ jobs:
         run: |
           cargo test --locked -p placemat-core --test update --test update_keys
           cargo test --locked -p placemat-core --lib update::
+      # Builds placemat.exe and reads its icon and version resources back.
+      - name: Windows resources
+        run: cargo test --locked -p placemat-app --test windows_resources
 
   pilot:
     runs-on: ubuntu-26.04

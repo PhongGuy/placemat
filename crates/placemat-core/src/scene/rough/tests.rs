@@ -334,29 +334,104 @@ fn a_missing_target_resolves_to_the_board_origin() {
     );
 }
 
+/// A free arrow from (0, 0) to (300, 0) with the given heads.
+fn headed(start: Head, end: Head) -> Element {
+    let mut a = Arrow::new(
+        ArrowEnd::Free(Point::new(0, 0)),
+        ArrowEnd::Free(Point::new(300, 0)),
+    );
+    (a.heads.start, a.heads.end) = (start, end);
+    el(7, Kind::Arrow(a))
+}
+
+fn kinds(sets: &[OpSet]) -> Vec<SetKind> {
+    sets.iter().map(|s| s.kind).collect()
+}
+
 #[test]
-fn each_head_adds_one_set_and_a_zero_length_arrow_is_a_dot() {
-    for head in [Head::Arrow, Head::Triangle, Head::Bar, Head::Dot] {
-        let mut a = Arrow::new(
-            ArrowEnd::Free(Point::new(0, 0)),
-            ArrowEnd::Free(Point::new(300, 0)),
-        );
-        (a.heads.start, a.heads.end) = (Head::None, head);
-        assert_eq!(
-            built(&el(7, Kind::Arrow(a.clone()))).geometry.rough.len(),
-            2,
-            "{head:?}"
-        );
-        a.heads.start = head;
-        assert_eq!(
-            built(&el(7, Kind::Arrow(a))).geometry.rough.len(),
-            3,
-            "{head:?}"
-        );
+fn line_heads_add_one_set_filled_heads_two_and_a_zero_length_arrow_is_a_dot() {
+    for (head, sets) in [
+        (Head::Arrow, 1),
+        (Head::Bar, 1),
+        (Head::Triangle, 2),
+        (Head::Dot, 2),
+    ] {
+        let one = built(&headed(Head::None, head)).geometry.rough.len();
+        assert_eq!(one, 1 + sets, "{head:?}");
+        let both = built(&headed(head, head)).geometry.rough.len();
+        assert_eq!(both, 1 + 2 * sets, "{head:?}");
     }
     let point = ArrowEnd::Free(Point::new(5, 5));
     let g = built(&el(7, Kind::Arrow(Arrow::new(point.clone(), point)))).geometry;
     assert!(is_dot(&g.rough), "{g:?}");
+}
+
+#[test]
+fn a_filled_head_is_a_solid_set_then_its_stroke() {
+    for head in [Head::Triangle, Head::Dot] {
+        let g = built(&headed(Head::None, head)).geometry;
+        assert_eq!(
+            kinds(&g.rough),
+            [SetKind::Stroke, SetKind::Solid, SetKind::Stroke],
+            "{head:?}"
+        );
+    }
+}
+
+#[test]
+fn a_solid_head_traces_its_outline_as_one_closed_path() {
+    for head in [Head::Triangle, Head::Dot] {
+        let mut e = headed(head, head);
+        e.stroke.roughness = 20;
+        let g = built(&e).geometry;
+        for pair in [g.rough.get(1..3).unwrap(), g.rough.get(3..5).unwrap()] {
+            let (solid, outline) = (pair.first().unwrap(), pair.last().unwrap());
+            // The fill keeps every outline point; only a later subpath's Move joins as a Line.
+            let joined: Vec<Op> = outline
+                .ops
+                .iter()
+                .enumerate()
+                .map(|(i, op)| match *op {
+                    Op::Move(x, y) if i > 0 => Op::Line(x, y),
+                    Op::Move(..) | Op::Line(..) | Op::Cubic(_) => *op,
+                })
+                .collect();
+            assert_eq!(solid.ops, joined, "{head:?}");
+        }
+    }
+}
+
+#[test]
+fn a_triangle_head_keeps_its_tip_and_wings_exact() {
+    let mut e = headed(Head::None, Head::Triangle);
+    (e.stroke.width, e.stroke.roughness) = (40, 30);
+    let g = built(&e).geometry;
+    // Head length max(10, 4 * 4) = 16, wings 25 degrees either side of the shaft.
+    let (sin, cos) = 25f32.to_radians().sin_cos();
+    let (tip, left, right) = (
+        (300.0, 0.0),
+        (300.0 - 16.0 * cos, -(16.0 * sin)),
+        (300.0 - 16.0 * cos, 16.0 * sin),
+    );
+    let outline = &g.rough.get(2).unwrap().ops;
+    let ends: Vec<(f32, f32)> = outline
+        .iter()
+        .map(|op| match *op {
+            Op::Move(x, y) | Op::Line(x, y) | Op::Cubic([.., x, y]) => (x, y),
+        })
+        .collect();
+    assert_eq!(ends, [tip, left, left, right, right, tip], "{outline:?}");
+}
+
+#[test]
+fn filling_heads_leaves_the_shaft_and_the_line_heads_unchanged() {
+    for line in [Head::Arrow, Head::Bar] {
+        let plain = built(&headed(line, Head::None)).geometry.rough;
+        for filled in [Head::Triangle, Head::Dot] {
+            let rough = built(&headed(line, filled)).geometry.rough;
+            assert_eq!(rough.get(..2), plain.get(..2), "{line:?} with {filled:?}");
+        }
+    }
 }
 
 #[test]
@@ -376,19 +451,15 @@ fn an_arrow_label_is_centred_on_the_shaft() {
 }
 
 #[test]
-fn a_dot_head_is_an_outlined_circle_as_wide_as_the_chevron() {
-    let mut a = Arrow::new(
-        ArrowEnd::Free(Point::new(0, 0)),
-        ArrowEnd::Free(Point::new(300, 0)),
-    );
-    a.heads.end = Head::Dot;
-    let mut e = el(7, Kind::Arrow(a));
+fn a_dot_head_is_a_filled_circle_as_wide_as_the_chevron() {
+    let mut e = headed(Head::None, Head::Dot);
     (e.stroke.width, e.stroke.roughness) = (20, 0);
     let b = built(&e);
     // Head length max(10, 4 * 2) = 10, so the circle's radius is 10 * sin(25 deg).
     let r = 10.0 * 25f32.to_radians().sin();
-    let head = b.geometry.rough.get(1..2).unwrap();
-    assert!(!is_dot(head), "{head:?}");
+    let head = b.geometry.rough.get(1..3).unwrap();
+    assert_eq!(kinds(head), [SetKind::Solid, SetKind::Stroke]);
+    assert!(!is_dot(head.get(1..).unwrap()), "{head:?}");
     let reach = head
         .iter()
         .flat_map(|s| &s.ops)

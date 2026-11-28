@@ -187,8 +187,9 @@ fn boxed(b: &Boxed, shape: Shape, style: &Style, measure: &dyn TextMeasure) -> S
     (origin, geometry, block)
 }
 
-/// An arrow from its resolved start: the shaft and one set per head, its outline the plain
-/// shaft, a dot when both ends meet, and a label centred on the shaft's midpoint.
+/// An arrow from its resolved start: the shaft, one set per arrow or bar head and two per
+/// triangle or dot head, its outline the plain shaft, a dot when both ends meet, and a label
+/// centred on the shaft's midpoint.
 fn arrow(a: &Arrow, board: &Board, style: &Style, measure: &dyn TextMeasure) -> Shaped {
     let start = resolve(&a.from, board, measure);
     let end = resolve(&a.to, board, measure);
@@ -230,8 +231,8 @@ fn shaft(dx: f32, dy: f32, start: Head, end: Head, style: &Style) -> Geometry {
 }
 
 /// One head at `tip`, pointing along the unit `dir`: its wings lie `size` back at 25 degrees
-/// either side, a bar spans the same width across the tip, and a dot is an outlined circle of
-/// that width centred on it.
+/// either side, a bar spans the same width across the tip, and a dot is a circle of that width
+/// centred on it. A triangle or dot is a [`SetKind::Solid`] set and then its outline.
 fn head(kind: Head, tip: (f32, f32), dir: (f32, f32), size: f32, style: &Style) -> Vec<OpSet> {
     let (sin, cos) = 25f32.to_radians().sin_cos();
     let wing = |s: f32| {
@@ -244,16 +245,46 @@ fn head(kind: Head, tip: (f32, f32), dir: (f32, f32), size: f32, style: &Style) 
     match kind {
         Head::None => Vec::new(),
         Head::Arrow => sets(generator.linear_path(&[left, point, right], false, &options)),
-        Head::Triangle => sets(generator.polygon(&[point, left, right], &options)),
+        Head::Triangle => {
+            let options = Some(filled_head(style, 1.0, true));
+            solid_then_outline(generator.polygon(&[point, left, right], &options))
+        }
         Head::Bar => {
             let (nx, ny) = (-dir.1 * size * sin, dir.0 * size * sin);
             sets(generator.line(tip.0 - nx, tip.1 - ny, tip.0 + nx, tip.1 + ny, &options))
         }
         Head::Dot => {
             let d = 2.0 * size * sin;
-            sets(generator.ellipse(tip.0, tip.1, d, d, &options))
+            let options = Some(filled_head(style, 0.5, false));
+            solid_then_outline(generator.ellipse(tip.0, tip.1, d, d, &options))
         }
     }
+}
+
+/// A filled head's outline options, as Excalidraw draws them: one pass, the jitter capped so
+/// the fill reads as a shape, and a triangle's corners kept on its tip and wings.
+fn filled_head(style: &Style, roughness_cap: f32, preserve_vertices: bool) -> Options {
+    let mut options = options(style, None, 0.0);
+    options.roughness = Some(style.roughness.min(roughness_cap));
+    options.disable_multi_stroke = Some(true);
+    options.preserve_vertices = Some(preserve_vertices);
+    options
+}
+
+/// The outline's own path, its subpaths joined into one closed region, painted before it. Built
+/// from the outline rather than roughr's fill so the two match and no random draws are added.
+fn solid_then_outline(d: Drawable<f32>) -> Vec<OpSet> {
+    let outline = sets(d);
+    let solid = outline.iter().flat_map(|s| &s.ops).enumerate();
+    let solid = solid.map(|(i, op)| match *op {
+        Op::Move(x, y) if i > 0 => Op::Line(x, y),
+        Op::Move(..) | Op::Line(..) | Op::Cubic(_) => *op,
+    });
+    let solid = OpSet {
+        kind: SetKind::Solid,
+        ops: solid.collect(),
+    };
+    std::iter::once(solid).chain(outline).collect()
 }
 
 /// Where an arrow end sits in the world: a free end's point, or the anchor fraction of the

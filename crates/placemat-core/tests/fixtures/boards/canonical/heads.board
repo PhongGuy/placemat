@@ -1,0 +1,82 @@
+placemat-board version=0
+
+arrow "arrow1" {
+    from 0 0
+    seed 1101
+    to 240 40
+    head start=arrow end=arrow
+    stroke "#1e1e1e" width=1 roughness=1 dash=solid
+    z "a1"
+}
+
+arrow "arrow4" {
+    from 0 80
+    seed 1102
+    to 240 120
+    head start=arrow end=arrow
+    stroke "#1e1e1e" width=4 roughness=1 dash=solid
+    z "a2"
+}
+
+arrow "bar1" {
+    from 0 160
+    seed 1103
+    to 240 200
+    head start=bar end=bar
+    stroke "#1e1e1e" width=1 roughness=1 dash=solid
+    z "a3"
+}
+
+arrow "bar4" {
+    from 0 240
+    seed 1104
+    to 240 280
+    head start=bar end=bar
+    stroke "#1e1e1e" width=4 roughness=1 dash=solid
+    z "a4"
+}
+
+arrow "dashed" {
+    from 0 320
+    seed 1105
+    to 240 360
+    head start=triangle end=dot
+    stroke "#1e1e1e" width=2 roughness=1 dash=dashed
+    z "a5"
+}
+
+arrow "dot1" {
+    from 0 400
+    seed 1106
+    to 240 440
+    head start=dot end=dot
+    stroke "#1e1e1e" width=1 roughness=1 dash=solid
+    z "a6"
+}
+
+arrow "dot4" {
+    from 0 480
+    seed 1107
+    to 240 520
+    head start=dot end=dot
+    stroke "#1e1e1e" width=4 roughness=1 dash=solid
+    z "a7"
+}
+
+arrow "tri1" {
+    from 0 560
+    seed 1108
+    to 240 600
+    head start=triangle end=triangle
+    stroke "#1e1e1e" width=1 roughness=1 dash=solid
+    z "a8"
+}
+
+arrow "tri4" {
+    from 0 640
+    seed 1109
+    to 240 680
+    head start=triangle end=triangle
+    stroke "#1e1e1e" width=4 roughness=1 dash=solid
+    z "a9"
+}

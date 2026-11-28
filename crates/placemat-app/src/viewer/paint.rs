@@ -144,7 +144,7 @@ pub fn painted(g: &Geometry, detail: Detail) -> impl Iterator<Item = &OpSet> {
 fn is_stroke(kind: SetKind) -> bool {
     match kind {
         SetKind::Stroke => true,
-        SetKind::Fill | SetKind::Sketch | _ => false,
+        SetKind::Fill | SetKind::Sketch | SetKind::Solid | _ => false,
     }
 }
 

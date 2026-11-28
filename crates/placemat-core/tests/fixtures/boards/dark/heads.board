@@ -1,0 +1,19 @@
+placemat-board version=0
+
+arrow "darkDot1" {
+    from 0 0
+    seed 1
+    to 40 0
+    head start=none end=dot
+    stroke "#1e1e1e" width=1 roughness=0 dash=solid
+    z "a1"
+}
+
+arrow "darkTri1" {
+    from 0 30
+    seed 2
+    to 40 30
+    head start=none end=triangle
+    stroke "#1e1e1e" width=1 roughness=0 dash=solid
+    z "a2"
+}

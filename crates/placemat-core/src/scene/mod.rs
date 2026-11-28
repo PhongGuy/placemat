@@ -118,7 +118,8 @@ impl Rect {
     }
 }
 
-/// What an [`OpSet`] paints: the stroke, a solid fill, or a hachure-style sketch fill.
+/// What an [`OpSet`] paints: the stroke, a solid fill, a hachure-style sketch fill, or a
+/// region filled in the stroke colour.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetKind {
@@ -128,6 +129,8 @@ pub enum SetKind {
     Fill,
     /// Fill lines (hachure and friends), stroked with the element's fill colour.
     Sketch,
+    /// A closed region filled solid with the element's stroke colour.
+    Solid,
 }
 
 /// One path command, in world units local to the element's origin.

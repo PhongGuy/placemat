@@ -8,8 +8,8 @@ use crate::util::{
     stacked_hachure_board, stacked_hachure_boxes,
 };
 
-const CANONICAL: [&str; 10] = [
-    "arrow", "diamond", "ellipse", "empty", "escapes", "freedraw", "line", "rect", "text",
+const CANONICAL: [&str; 11] = [
+    "arrow", "diamond", "ellipse", "empty", "escapes", "freedraw", "heads", "line", "rect", "text",
     "unknown",
 ];
 

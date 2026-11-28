@@ -361,7 +361,7 @@ fn shape(set: &OpSet, stroke: &Stroke, origin: (f64, f64), view: View) -> Shape 
     let w = paint::walk(&set.ops, origin, view.camera, view.scale);
     let len = w.len as f32;
     let (width, dash) = match set.kind {
-        SetKind::Fill => (0.0, None),
+        SetKind::Fill | SetKind::Solid => (0.0, None),
         SetKind::Sketch => (paint::sketch_px(stroke.width, zoom), None),
         SetKind::Stroke | _ => {
             let width = paint::stroke_px(stroke.width, zoom);
@@ -371,7 +371,7 @@ fn shape(set: &OpSet, stroke: &Stroke, origin: (f64, f64), view: View) -> Shape 
     let dashes = dash.map_or(0.0, |[on, off]| len / (on + off));
     let s = view.scale;
     let curves = match set.kind {
-        SetKind::Fill => w.fill_curves,
+        SetKind::Fill | SetKind::Solid => w.fill_curves,
         SetKind::Sketch | SetKind::Stroke | _ => stroke_curves(w.segments, w.subpaths, dashes),
     };
     // A stroke reaches half its width past the control points.
@@ -387,7 +387,7 @@ fn shape(set: &OpSet, stroke: &Stroke, origin: (f64, f64), view: View) -> Shape 
         curves,
         bounds,
         l1: match set.kind {
-            SetKind::Fill => w.l1 * s,
+            SetKind::Fill | SetKind::Solid => w.l1 * s,
             SetKind::Sketch | SetKind::Stroke | _ => stroke_l1(
                 w.l1 * s,
                 f64::from(width) * s,
@@ -441,16 +441,11 @@ fn build(
         ));
         return;
     }
-    let fill_colour = match fill_of(e) {
-        Fill::Colour { colour, .. } => Some(paint::rgba(colour.shown(view.appearance))),
-        Fill::None | _ => None,
-    };
+    let fill = fill_of(e);
     for (set, dash) in p.sets() {
-        let colour = match set.kind {
-            SetKind::Fill | SetKind::Sketch => fill_colour,
-            SetKind::Stroke | _ => Some(paint::rgba(stroke.colour.shown(view.appearance))),
+        let Some(colour) = ink(set.kind, &stroke, fill, view.appearance) else {
+            continue;
         };
-        let Some(colour) = colour else { continue };
         if let Some(path) = path_of(set, &stroke, dash, v.origin, camera, corner, scale) {
             draws.push(Draw::Path(path, colour));
         }
@@ -467,6 +462,19 @@ fn build(
             | _ => TextAlign::Center,
         };
         label_lines(draws, label, align, &stroke, v.origin, view, corner, window);
+    }
+}
+
+/// The colour a set of `kind` paints in on `appearance`'s canvas: outlines and solid heads in
+/// the stroke colour, fills and fill lines in the fill colour, None when there is no fill.
+fn ink(kind: SetKind, stroke: &Stroke, fill: Fill, appearance: Appearance) -> Option<Rgba> {
+    let fill_colour = match fill {
+        Fill::Colour { colour, .. } => Some(paint::rgba(colour.shown(appearance))),
+        Fill::None | _ => None,
+    };
+    match kind {
+        SetKind::Fill | SetKind::Sketch => fill_colour,
+        SetKind::Stroke | SetKind::Solid | _ => Some(paint::rgba(stroke.colour.shown(appearance))),
     }
 }
 
@@ -491,7 +499,7 @@ fn path_of(
         }))
     };
     let mut b = match set.kind {
-        SetKind::Fill => PathBuilder::fill(),
+        SetKind::Fill | SetKind::Solid => PathBuilder::fill(),
         SetKind::Sketch => stroked(paint::sketch_px(stroke.width, zoom)),
         SetKind::Stroke | _ => stroked(paint::stroke_px(stroke.width, zoom)),
     };
@@ -514,7 +522,7 @@ fn path_of(
             }
             Op::Cubic([ax, ay, bx, by, x, y]) => {
                 let p = [current, local(ax, ay), local(bx, by), local(x, y)];
-                if set.kind == SetKind::Fill {
+                if matches!(set.kind, SetKind::Fill | SetKind::Solid) {
                     b.cubic_bezier_to(at(p[3]), at(p[1]), at(p[2]));
                 } else {
                     let n = paint::cubic_segments(p, scale);
@@ -711,6 +719,124 @@ mod tests {
         read_file(&path).unwrap().board
     }
 
+    fn heads_board() -> Board {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../placemat-core/tests/fixtures/boards/canonical/heads.board");
+        read_file(&path).unwrap().board
+    }
+
+    /// The dashed arrow's Solid head sets beside copies relabelled Fill, with the arrow's
+    /// stroke, origin and the fitted view.
+    struct Solids {
+        pairs: Vec<(OpSet, OpSet)>,
+        stroke: Stroke,
+        origin: (f64, f64),
+        view: View,
+    }
+
+    fn dashed_solids() -> Solids {
+        let board = heads_board();
+        let scene = Scene::build(&board, &MEASURE);
+        let view = fitted(&scene);
+        let v = scene
+            .visible(scene.bounds().unwrap())
+            .find(|v| v.id.as_str() == "dashed")
+            .unwrap();
+        let pairs: Vec<(OpSet, OpSet)> = v
+            .geometry
+            .rough
+            .iter()
+            .filter(|s| s.kind == SetKind::Solid)
+            .map(|s| {
+                let mut fill = s.clone();
+                fill.kind = SetKind::Fill;
+                (s.clone(), fill)
+            })
+            .collect();
+        assert_eq!(pairs.len(), 2, "a triangle and a dot head");
+        Solids {
+            pairs,
+            stroke: board.get(v.id).unwrap().stroke,
+            origin: v.origin,
+            view,
+        }
+    }
+
+    #[test]
+    fn a_dashed_arrows_solid_heads_price_as_undashed_fills() {
+        let Solids {
+            pairs,
+            stroke,
+            origin,
+            view,
+        } = dashed_solids();
+        for (solid, fill) in &pairs {
+            let (s, f) = (
+                shape(solid, &stroke, origin, view),
+                shape(fill, &stroke, origin, view),
+            );
+            assert_eq!(s.dash, None);
+            assert_eq!((s.curves, s.bounds, s.l1), (f.curves, f.bounds, f.l1));
+        }
+    }
+
+    #[test]
+    fn a_solid_head_builds_the_same_path_as_a_fill() {
+        let Solids {
+            pairs,
+            stroke,
+            origin,
+            view,
+        } = dashed_solids();
+        let build = |set: &OpSet| {
+            let dash = shape(set, &stroke, origin, view).dash;
+            let path = path_of(
+                set,
+                &stroke,
+                dash,
+                origin,
+                view.camera,
+                (0.0, 0.0),
+                view.scale,
+            );
+            format!("{:?}", path.unwrap())
+        };
+        for (solid, fill) in &pairs {
+            assert_eq!(build(solid), build(fill));
+        }
+    }
+
+    #[test]
+    fn each_set_kind_paints_in_its_shown_ink() {
+        let stroke_colour = Colour::rgb(0xe0, 0x31, 0x31);
+        let fill_colour = Colour::rgb(0xa5, 0xd8, 0xff);
+        let mut stroke = Stroke::default();
+        stroke.colour = stroke_colour;
+        let filled = Fill::Colour {
+            colour: fill_colour,
+            style: FillStyle::Solid,
+        };
+        for a in [Appearance::Light, Appearance::Dark] {
+            let shown = |c: Colour| Some(paint::rgba(c.shown(a)));
+            assert_eq!(
+                ink(SetKind::Stroke, &stroke, filled, a),
+                shown(stroke_colour)
+            );
+            assert_eq!(
+                ink(SetKind::Solid, &stroke, filled, a),
+                shown(stroke_colour)
+            );
+            assert_eq!(
+                ink(SetKind::Solid, &stroke, Fill::None, a),
+                shown(stroke_colour)
+            );
+            assert_eq!(ink(SetKind::Fill, &stroke, filled, a), shown(fill_colour));
+            assert_eq!(ink(SetKind::Sketch, &stroke, filled, a), shown(fill_colour));
+            assert_eq!(ink(SetKind::Fill, &stroke, Fill::None, a), None);
+            assert_eq!(ink(SetKind::Sketch, &stroke, Fill::None, a), None);
+        }
+    }
+
     /// One hachured, dashed box `side` units square, centred on the origin.
     fn hachured_box(side: i32) -> Board {
         let mut body = Boxed::new(Point::new(-side / 2, -side / 2), Size::new(side, side));
@@ -890,7 +1016,7 @@ mod tests {
                     continue;
                 };
                 let curves = format!("{path:?}").matches("PathCurve {").count() as u64;
-                let k = usize::from(set.kind != SetKind::Fill);
+                let k = usize::from(!matches!(set.kind, SetKind::Fill | SetKind::Solid));
                 worst[k] = worst[k].max(curves as f64 / sh.curves.max(1) as f64);
                 if curves > sh.curves {
                     breaches.push(format!(
@@ -914,6 +1040,7 @@ mod tests {
             ("all kinds", all_kinds_board()),
             ("extremes", extremes_board()),
             ("stacked hachure", stacked_hachure_board()),
+            ("heads", heads_board()),
         ];
         let mut breaches = Vec::new();
         for (name, board) in &boards {

@@ -4,6 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use placemat_app::updates::{
     Launcher, Offer, QuitInstall, UpdateModel, install_at_quit, relaunch_command,
@@ -192,19 +193,22 @@ fn relaunch_command_waits_for_pid_then_runs() {
         (Os::Linux, "exec \"$1\""),
         (Os::Macos, "exec /usr/bin/open \"$1\""),
     ] {
-        let c = relaunch_command(path, 4242, os).expect("a Unix relaunch");
+        let c = relaunch_command(path, 4242, os, Duration::from_secs(30)).expect("a Unix relaunch");
         assert_eq!(c.get_program(), "/bin/sh");
         let args: Vec<_> = c.get_args().collect();
-        assert_eq!(args.len(), 4, "{args:?}");
+        assert_eq!(args.len(), 5, "{args:?}");
         assert_eq!(args[0], "-c");
         let script = args[1].to_str().unwrap();
-        assert!(script.starts_with("while kill -0 \"$0\""), "{script}");
+        assert!(script.starts_with("i=0; n=$2; while"), "{script}");
+        assert!(!script.contains(['\\', '\n']), "one clean line: {script:?}");
+        assert!(script.contains("kill -0 \"$0\""), "{script}");
         assert!(script.ends_with(start), "{script}");
         assert_eq!(args[2], "4242");
         assert_eq!(args[3], path.as_os_str());
+        assert_eq!(args[4], "300", "30 s in 100 ms ticks");
     }
     assert!(
-        relaunch_command(path, 4242, Os::Windows).is_none(),
+        relaunch_command(path, 4242, Os::Windows, Duration::from_secs(30)).is_none(),
         "NSIS relaunches on Windows"
     );
 }
@@ -225,10 +229,48 @@ fn relaunch_command_runs_the_target_once_the_pid_is_gone() {
     let mut gone = std::process::Command::new("true").spawn().unwrap();
     let pid = gone.id();
     gone.wait().unwrap();
-    let status = relaunch_command(&target, pid, Os::Linux)
+    let status = relaunch_command(&target, pid, Os::Linux, Duration::from_secs(30))
         .unwrap()
         .status()
         .unwrap();
     assert!(status.success(), "{status}");
     assert!(marker.exists(), "the target never ran");
+}
+
+// A pid that never exits (or was reused) must not keep the new version from starting.
+#[cfg(target_os = "linux")]
+#[test]
+fn relaunch_command_runs_the_target_when_the_wait_runs_out() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("started");
+    let target = dir.path().join("fake-app");
+    std::fs::write(
+        &target,
+        format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut alive = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let started = std::time::Instant::now();
+    let status = relaunch_command(&target, alive.id(), Os::Linux, Duration::from_millis(300))
+        .unwrap()
+        .status();
+    let waited = started.elapsed();
+    alive.kill().unwrap();
+    alive.wait().unwrap();
+    let status = status.unwrap();
+    assert!(status.success(), "{status}");
+    assert!(
+        marker.exists(),
+        "the target never ran while the old pid lived"
+    );
+    assert!(waited >= Duration::from_millis(300), "{waited:?}");
+    assert!(
+        waited < Duration::from_secs(10),
+        "the wait was not bounded: {waited:?}"
+    );
 }

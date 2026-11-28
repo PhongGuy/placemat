@@ -291,21 +291,23 @@ pub fn offer(s: &Server, format: &str, listed: &[u8]) -> Available {
     offer_within(s, format, listed, Duration::from_secs(15 * 60))
 }
 
-/// The sorted file names in `dir`.
+/// The sorted file names in `dir`, lock files left out.
 pub fn leftovers(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| !n.ends_with(".lock"))
         .collect();
     names.sort();
     names
 }
 
-use placemat_core::update::{Staged, download};
+use placemat_core::update::{Claim, Staged, download};
 
 /// Stages `body` in `dir` as the 99.0.0 `format` release, through a real check and download.
 pub fn stage(dir: &Path, format: &str, body: &[u8]) -> Staged {
     let s = Server::start();
     s.route("/artifact", Reply::Body(body.to_vec()));
-    download(&offer(&s, format, body), dir, |_, _| {}).unwrap()
+    let claim = Claim::new(dir).unwrap();
+    download(&offer(&s, format, body), &claim, |_, _| {}).unwrap()
 }

@@ -882,11 +882,10 @@ pub(crate) struct Parser<'text> {
     grammar: Grammar<'text>,
     cursor: Pos,
     state: ParserState,
-    // used in sd-filtering
-    begin_valid: bool,
-    // number of levels deep
-    // used to determine if a } is still needed
-    nest: usize,
+    // Whether the current node, slashdashed or not, already owns its one real block.
+    taken: bool,
+    // One entry per open block, slashdashed or not: the owner's `taken` to restore at its `}`.
+    owners: Vec<bool>,
 }
 
 impl<'text> Parser<'text> {
@@ -896,8 +895,8 @@ impl<'text> Parser<'text> {
             grammar: Grammar(text),
             cursor: Pos(0),
             state: ParserState::BeginDocument,
-            begin_valid: false,
-            nest: 0,
+            taken: false,
+            owners: Vec::new(),
         }
     }
     fn next_event(&mut self) -> PResult<InnerEvent<'text>> {
@@ -908,31 +907,46 @@ impl<'text> Parser<'text> {
                 event
             }
             ParserState::NextNode => {
-                let (cursor, event) = self.grammar.start_node(self.cursor, self.nest == 0)?;
+                let (cursor, event) = self
+                    .grammar
+                    .start_node(self.cursor, self.owners.is_empty())?;
                 self.cursor = cursor;
                 event
             }
             ParserState::NodeProps => {
-                let (cursor, event) = self.grammar.node_item(self.cursor, self.nest == 0, true)?;
+                let (cursor, event) =
+                    self.grammar
+                        .node_item(self.cursor, self.owners.is_empty(), true)?;
                 self.cursor = cursor;
                 event
             }
             // same as NodeProps without propvalue
             ParserState::NodeChildren => {
-                let (cursor, event) = self.grammar.node_item(self.cursor, self.nest == 0, false)?;
+                let (cursor, event) =
+                    self.grammar
+                        .node_item(self.cursor, self.owners.is_empty(), false)?;
                 self.cursor = cursor;
                 event
             }
             ParserState::Done => InnerEvent::Done,
         };
         self.state = match event {
-            InnerEvent::Node { .. } | InnerEvent::PropValue { .. } => ParserState::NodeProps,
-            InnerEvent::Begin { offset, .. } => {
-                self.nest = self.nest.checked_add(1).ok_or(Error::Overflow(offset))?;
+            InnerEvent::Node { .. } => {
+                self.taken = false;
+                ParserState::NodeProps
+            }
+            InnerEvent::PropValue { .. } => ParserState::NodeProps,
+            // Every node owns at most one real block, even inside skipped text; a slashdashed
+            // block leaves its owner as it was.
+            InnerEvent::Begin { sd, offset } => {
+                if !sd && self.taken {
+                    return Err(Error::MultipleChildren(offset));
+                }
+                self.owners.push(self.taken || !sd);
                 ParserState::NextNode
             }
             InnerEvent::End { offset } => {
-                self.nest = self.nest.checked_sub(1).ok_or(Error::Overflow(offset))?;
+                self.taken = self.owners.pop().ok_or(Error::Overflow(offset))?;
                 ParserState::NodeChildren
             }
             InnerEvent::Done => ParserState::Done,
@@ -947,23 +961,15 @@ impl<'text> Parser<'text> {
             break match next_pop.take().ok_or(()).or_else(|()| self.next_event())? {
                 InnerEvent::Node { sd: true, .. } => {
                     // Skip the node with every block it owns: the skip ends only at the next
-                    // real sibling, the parent's close or the end. A slashdashed node still owns
-                    // at most one unslashdashed block, as a real one does.
+                    // real sibling, the parent's close or the end.
                     // next_pop is always none here so we can just take events
                     let mut depth = 0_usize;
-                    let mut owns_real_block = false;
                     next_pop = loop {
                         match self.next_event()? {
                             node @ InnerEvent::Node { sd: false, .. } if depth == 0 => {
                                 break Some(node);
                             }
-                            InnerEvent::Begin { sd, offset } => {
-                                if depth == 0 && !sd {
-                                    if owns_real_block {
-                                        return Err(Error::MultipleChildren(offset));
-                                    }
-                                    owns_real_block = true;
-                                }
+                            InnerEvent::Begin { .. } => {
                                 depth =
                                     depth.checked_add(1).ok_or(Error::Overflow(self.cursor.0))?;
                             }
@@ -972,10 +978,6 @@ impl<'text> Parser<'text> {
                                 None => break Some(end),
                             },
                             InnerEvent::Done => break Some(InnerEvent::Done),
-                            // A slashdashed sibling continues the skip but owns its own block.
-                            InnerEvent::Node { sd: true, .. } if depth == 0 => {
-                                owns_real_block = false;
-                            }
                             InnerEvent::Node { .. } | InnerEvent::PropValue { .. } => {}
                         }
                     };
@@ -1008,10 +1010,7 @@ impl<'text> Parser<'text> {
                     ty,
                     name,
                     start,
-                } => {
-                    self.begin_valid = true;
-                    Event::Node { ty, name, start }
-                }
+                } => Event::Node { ty, name, start },
                 InnerEvent::PropValue { sd: true, .. } => continue,
                 InnerEvent::PropValue {
                     sd: false,
@@ -1025,17 +1024,8 @@ impl<'text> Parser<'text> {
                     value,
                     start,
                 },
-                InnerEvent::Begin { sd: false, offset } => {
-                    if self.begin_valid {
-                        Event::Begin { offset }
-                    } else {
-                        return Err(Error::MultipleChildren(offset));
-                    }
-                }
-                InnerEvent::End { offset } => {
-                    self.begin_valid = false;
-                    Event::End { offset }
-                }
+                InnerEvent::Begin { sd: false, offset } => Event::Begin { offset },
+                InnerEvent::End { offset } => Event::End { offset },
                 InnerEvent::Done => return Ok(None),
             };
         }))

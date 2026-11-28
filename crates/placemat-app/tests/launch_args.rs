@@ -84,3 +84,99 @@ fn a_display_is_wayland_or_x11_and_never_an_empty_value() {
     assert!(!has_display(env(&[("DISPLAY", "")])));
     assert!(!has_display(env(&[])));
 }
+
+fn open(path: &str) -> Result<Launch, LaunchError> {
+    Ok(Launch::Open {
+        path: Some(path.into()),
+    })
+}
+
+#[test]
+fn a_dash_leading_path_without_the_separator_is_refused_with_a_hint() {
+    let refused = parse(args(&["-notes.board"]));
+    assert_eq!(
+        refused,
+        Err(LaunchError::UnknownFlag("-notes.board".into()))
+    );
+    let message = refused.unwrap_err().to_string();
+    assert!(message.contains("placemat -- -notes.board"), "{message}");
+}
+
+#[test]
+fn the_separator_lets_a_path_start_with_a_dash() {
+    assert_eq!(parse(args(&["--", "-notes.board"])), open("-notes.board"));
+    assert_eq!(parse(args(&["--", "-"])), open("-"));
+}
+
+#[test]
+fn a_lone_separator_opens_no_board() {
+    assert_eq!(parse(args(&["--"])), Ok(Launch::Open { path: None }));
+}
+
+#[test]
+fn after_the_separator_every_argument_is_a_path() {
+    assert_eq!(parse(args(&["--", "--"])), open("--"));
+    assert_eq!(parse(args(&["--", "--help"])), open("--help"));
+    assert_eq!(parse(args(&["--", "-V"])), open("-V"));
+}
+
+#[test]
+fn help_and_version_before_the_separator_still_win() {
+    assert_eq!(parse(args(&["--help", "--", "x"])), Ok(Launch::Help));
+    assert_eq!(parse(args(&["-V", "--", "--bogus"])), Ok(Launch::Version));
+}
+
+#[test]
+fn an_unknown_flag_before_the_separator_is_refused() {
+    assert_eq!(
+        parse(args(&["--bogus", "--", "--help"])),
+        Err(LaunchError::UnknownFlag("--bogus".into()))
+    );
+}
+
+#[test]
+fn the_separator_still_allows_only_one_path() {
+    assert_eq!(
+        parse(args(&["a", "--", "b"])),
+        Err(LaunchError::UnexpectedArgument("b".into()))
+    );
+    assert_eq!(
+        parse(args(&["--", "a", "b"])),
+        Err(LaunchError::UnexpectedArgument("b".into()))
+    );
+}
+
+#[test]
+fn a_separator_after_the_path_is_harmless() {
+    assert_eq!(parse(args(&["a", "--"])), open("a"));
+}
+
+#[test]
+fn a_lone_dash_is_refused() {
+    assert_eq!(
+        parse(args(&["-"])),
+        Err(LaunchError::UnknownFlag("-".into()))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_non_utf8_dash_leading_path_after_the_separator_keeps_its_bytes() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let raw = OsStr::from_bytes(b"-\xff").to_os_string();
+    assert_eq!(
+        parse(vec![OsString::from("--"), raw.clone()]),
+        Ok(Launch::Open {
+            path: Some(raw.into())
+        })
+    );
+}
+
+#[test]
+fn the_usage_explains_the_separator() {
+    let usage = placemat_app::launch::USAGE;
+    assert!(usage.contains("--  "), "{usage}");
+    assert!(usage.contains("start with '-'"), "{usage}");
+}

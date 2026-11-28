@@ -5583,6 +5583,7 @@ dependencies = [
  "fastrand",
  "flate2",
  "hex",
+ "libc",
  "minisign-verify",
  "roughr",
  "semver",

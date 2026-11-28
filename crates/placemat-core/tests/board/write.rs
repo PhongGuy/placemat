@@ -1,6 +1,6 @@
 //! The canonical writer: layout, ordering, number forms and string escaping.
 
-use placemat_core::board::{Board, Element, write};
+use placemat_core::board::{Board, Element, load, write};
 
 use crate::util::{ALL_KINDS, all_kinds_board, labelled};
 
@@ -33,4 +33,17 @@ fn free_strings_escape_controls_and_bidi() {
     let want = r#"    label "q\"b\\s\nn\rr\tt\bb\ff\u{0}\u{1b}\u{7f}\u{85}\u{200e}\u{200f}\u{202a}\u{202e}\u{2066}\u{2069}\u{2028}\u{2029}\u{feff}é漢🎉""#;
     assert!(text.lines().any(|l| l == want), "{text}");
     assert!(!text.contains('\t') && !text.contains('\r'), "{text:?}");
+}
+
+#[test]
+fn an_old_raw_hidden_character_loads_unchanged_and_writes_escaped() {
+    let mut b = Board::new();
+    b.insert(labelled("a", "xy".to_owned())).unwrap();
+    let old = write(&b).unwrap().replace("\"xy\"", "\"x\u{200b}y\"");
+    let loaded = load(old.as_bytes()).unwrap();
+    let mut want = Board::new();
+    want.insert(labelled("a", "x\u{200b}y".to_owned())).unwrap();
+    assert_eq!(loaded.board, want);
+    let text = write(&loaded.board).unwrap();
+    assert!(text.contains(r#"label "x\u{200b}y""#), "{text}");
 }

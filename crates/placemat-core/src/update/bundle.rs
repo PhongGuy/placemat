@@ -131,6 +131,17 @@ fn check_entry<R: std::io::Read>(
     let Some(first) = parts.first() else {
         return Err("the update has an empty path");
     };
+    // Cleanup never changes a mode through a path, so a directory its owner cannot read and
+    // search would be left behind; refuse it here instead.
+    if kind.is_dir() {
+        let mode = entry
+            .header()
+            .mode()
+            .map_err(|_| "the update has an unreadable mode")?;
+        if mode & 0o500 != 0o500 {
+            return Err("the update has a directory its owner cannot open");
+        }
+    }
     if top.is_none() {
         let name = first.to_string_lossy();
         if !kind.is_dir() || parts.len() != 1 || !name.ends_with(".app") {
@@ -181,7 +192,7 @@ fn swap_dirs(new: &Path, target: &Path, aside: &Path) -> Result<(), InstallError
 pub(super) fn remove_tree(path: &Path) {
     match std::fs::symlink_metadata(path) {
         Ok(m) if m.is_dir() => {
-            allow_owner_write(path, &m);
+            allow_owner_write(path);
             drop(std::fs::remove_dir_all(path));
         }
         Ok(_) => drop(std::fs::remove_file(path)),
@@ -189,26 +200,36 @@ pub(super) fn remove_tree(path: &Path) {
     }
 }
 
-/// Gives every real directory under `dir` owner write, so an update carrying a read-only
-/// directory can still be emptied. Links are never followed; `meta` is `dir`'s own lstat.
-fn allow_owner_write(dir: &Path, meta: &std::fs::Metadata) {
+/// Gives every real directory under `dir` owner rwx, so an update carrying a read-only
+/// directory can still be emptied. Each mode change goes through a handle opened without
+/// following links; a path that is not a directory by then, or cannot be opened, is left alone.
+fn allow_owner_write(dir: &Path) {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt as _;
+        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+        // O_NONBLOCK keeps a FIFO swapped in at the path from blocking the open.
+        let Ok(handle) = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(dir)
+        else {
+            return;
+        };
+        let Ok(meta) = handle.metadata() else {
+            return;
+        };
         let mode = meta.permissions().mode();
         if mode & 0o700 != 0o700 {
-            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode | 0o700));
+            let _ = handle.set_permissions(std::fs::Permissions::from_mode(mode | 0o700));
         }
         for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-            if let Ok(m) = std::fs::symlink_metadata(entry.path())
-                && m.is_dir()
-            {
-                allow_owner_write(&entry.path(), &m);
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                allow_owner_write(&entry.path());
             }
         }
     }
     #[cfg(not(unix))]
-    let _ = (dir, meta);
+    let _ = dir;
 }
 
 /// The install error for an I/O failure at `path`: a refused permission is
@@ -229,7 +250,9 @@ pub(crate) fn failed(path: &Path, target: &Path, e: std::io::Error) -> InstallEr
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
-    use super::{install_bundle, settle_aside, staging_paths, swap_dirs};
+    use super::{
+        allow_owner_write, install_bundle, remove_tree, settle_aside, staging_paths, swap_dirs,
+    };
     use crate::update::InstallError;
     use std::fs::Permissions;
     use std::io::Write as _;
@@ -611,6 +634,59 @@ mod tests {
             assert_eq!(leftovers(dir.path()), ["Placemat.app"]);
         }
         assert_eq!(mode(&bundle.join("ro")) & 0o777, 0o555);
+    }
+
+    // A directory its owner cannot open could not be emptied by a cleanup that never changes
+    // a mode through a path, so the archive is refused before it lands.
+    #[test]
+    fn bundle_refuses_directory_its_owner_cannot_open() {
+        for dir_mode in [0o000, 0o300] {
+            assert_refused(vec![(
+                "unopenable directory",
+                tarball(&[TOP, E::DirMode("Placemat.app/x/", dir_mode)]),
+            )]);
+        }
+    }
+
+    // A read-only directory swapped for a link to `target` after cleanup's lstat; cleanup must
+    // not change the target's mode through the link.
+    fn swapped_for_link(target: &Path, target_mode: u32) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work");
+        std::os::unix::fs::symlink(target, &path).unwrap();
+        let _guard = ModeGuard::set(target, target_mode);
+        allow_owner_write(&path);
+        assert!(target.exists());
+        assert_eq!(mode(target), target_mode);
+    }
+
+    #[test]
+    fn owner_write_leaves_a_linked_directory_alone() {
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("dir");
+        std::fs::create_dir(&target).unwrap();
+        swapped_for_link(&target, 0o500);
+    }
+
+    #[test]
+    fn owner_write_leaves_a_linked_file_alone() {
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("file");
+        std::fs::write(&target, b"x").unwrap();
+        swapped_for_link(&target, 0o600);
+    }
+
+    #[test]
+    fn remove_tree_removes_only_the_link() {
+        let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let target = outside.path().join("file");
+        std::fs::write(&target, b"x").unwrap();
+        std::fs::set_permissions(&target, Permissions::from_mode(0o600)).unwrap();
+        let link = dir.path().join("work");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        remove_tree(&link);
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(mode(&target), 0o600);
     }
 
     // Another copy's work directory and aside copy, each holding a marker file.

@@ -99,12 +99,17 @@ fn lock_name(nonce: &str) -> String {
 }
 
 /// Removes the regular files and links in `dir` whose names start with `placemat-update-`
-/// and that no live process owns, best effort. A name carrying a nonce is kept while its
-/// lock is held, cannot be probed, or is not a regular file; an unlocked regular lock file
-/// goes once it is a minute old. Directories and every other name are left alone.
+/// and that no live process owns, best effort, and likewise the real directories named
+/// `.placemat-update-<nonce>-...` (a macOS copy's work directories). A name carrying a nonce
+/// is kept while its lock is held, cannot be probed, or is not a regular file; an unlocked
+/// regular lock file goes once it is a minute old. Every other name is left alone.
 pub fn sweep_staged(dir: &Path) {
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let file_name = entry.file_name();
+        if let Some(work) = file_name.to_str().and_then(|n| n.strip_prefix('.')) {
+            sweep_work_dir(dir, work, &entry.path());
+            continue;
+        }
         let Some(name) = file_name.to_str().filter(|n| n.starts_with(PREFIX)) else {
             continue;
         };
@@ -135,6 +140,22 @@ pub fn sweep_staged(dir: &Path) {
             }
             Probe::Held => {}
         }
+    }
+}
+
+/// Removes the work directory at `path` (named `.` + `name`) once its owner is gone. Only a
+/// real directory under a nonce qualifies; the tree goes while the probe holds the lock.
+fn sweep_work_dir(dir: &Path, name: &str, path: &Path) {
+    let Owner::Data(nonce) = owner(name) else {
+        return;
+    };
+    if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
+    match probe(&dir.join(lock_name(nonce))) {
+        Probe::Missing => super::bundle::remove_tree(path),
+        Probe::Unlocked(_held) => super::bundle::remove_tree(path),
+        Probe::Held => {}
     }
 }
 

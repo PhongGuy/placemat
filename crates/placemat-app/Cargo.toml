@@ -29,6 +29,9 @@ image = { version = "=0.25.10", default-features = false, features = ["png", "gi
 tempfile.workspace = true
 object = { version = "=0.40.0", default-features = false, features = ["read_core", "pe", "std"] }
 
+[build-dependencies]
+winresource = "=0.1.34"
+
 [package.metadata.packager]
 productName = "Placemat"
 identifier = "dev.placemat.app"

@@ -23,7 +23,9 @@ pub enum Launch {
 #[non_exhaustive]
 pub enum LaunchError {
     /// A flag the app does not know.
-    #[error("unknown option {0}")]
+    #[error(
+        "unknown option '{0}' (to open a file whose name starts with '-', use: placemat -- {0} or ./{0})"
+    )]
     UnknownFlag(String),
     /// A positional argument after the board path; the app opens one board.
     #[error("unexpected argument {0}")]
@@ -38,23 +40,29 @@ Opens Placemat, a repo-native whiteboard.
 
 Arguments:
   [PATH]  A .board file to open
+  --      End options, so PATH may start with '-'
 
 Options:
   -h, --help     Print this help
   -V, --version  Print the version";
 
-/// Reads the arguments after the program name. Help and version win over everything else; the
-/// first positional argument is the board to open, and an unknown flag or a second positional
-/// is refused (the first refusal wins).
+/// Reads the arguments after the program name. Help and version before `--` win over everything
+/// else; the first `--` ends options, so every later argument is a path. The first path is the
+/// board to open, and an unknown flag or a second path is refused (the first refusal wins).
 pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Launch, LaunchError> {
     let mut refused = None;
     let mut path = None;
+    let mut operands_only = false;
     for arg in args {
+        // After the first `--` nothing is an option, so a path named `--help` or `-V` opens
+        // instead of asking for help or the version.
+        let is_option = !operands_only && arg.as_encoded_bytes().starts_with(b"-");
         match arg.to_str() {
-            Some("--help" | "-h") => return Ok(Launch::Help),
-            Some("--version" | "-V") => return Ok(Launch::Version),
+            _ if is_option && arg.as_encoded_bytes() == b"--" => operands_only = true,
+            Some("--help" | "-h") if is_option => return Ok(Launch::Help),
+            Some("--version" | "-V") if is_option => return Ok(Launch::Version),
             _ if refused.is_some() => {}
-            _ if arg.as_encoded_bytes().starts_with(b"-") => {
+            _ if is_option => {
                 refused = Some(LaunchError::UnknownFlag(arg.to_string_lossy().into_owned()));
             }
             // Taken as the OS gave it, so a non-UTF-8 path still opens.

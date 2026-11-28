@@ -14,10 +14,8 @@ const FLAT_TOL: u8 = 2;
 /// The probe's side in world units.
 const PROBE: f64 = 0.5;
 
-/// Each arrow in `dark/heads.board` and a point inside its end head that neither the head's
-/// outline nor the shaft reaches, local to the arrow's start. The arrows run 40 along x with
-/// width 1 and no roughness, so the size-10 heads sit exactly on the tip at (40, 0): the dot
-/// has radius 4.23, the triangle's wings lie 9.06 back at 4.23 either side.
+/// Each arrow in `dark/heads.board` and a point inside its end head that neither the outline
+/// nor the shaft reaches, local to the arrow's start; exact because the arrows have no roughness.
 const HEADS: [(&str, (f64, f64)); 2] = [("darkDot1", (38.0, 2.0)), ("darkTri1", (34.0, 1.25))];
 
 /// The world bounds of arrow `id` as (x, y, w, h), and its start.

@@ -30,6 +30,7 @@ fn hash(g: &Geometry) -> u64 {
                 SetKind::Stroke => b's',
                 SetKind::Fill => b'f',
                 SetKind::Sketch => b'k',
+                SetKind::Solid => b'd',
                 _ => panic!("a set kind the golden hash does not know"),
             };
             h = fnv(h, &[kind]);

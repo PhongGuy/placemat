@@ -256,13 +256,16 @@ fn sweep_removes_a_gone_claims_work_dir() {
     let dir = tempfile::tempdir().unwrap();
     let claim = Claim::new(dir.path()).unwrap();
     let work = work_dir(dir.path(), claim.nonce());
-    // A read-only directory inside must not stop the removal.
+    // A read-only directory inside must not stop the removal. Only Unix can seal one here, so
+    // elsewhere the plain removal is the whole test.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
         let sealed = work.join("Placemat.app/Contents");
         std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o555)).unwrap();
     }
+    #[cfg(not(unix))]
+    drop(work);
     let lock = lock_name(&claim);
     drop(claim);
     sweep_staged(dir.path());
